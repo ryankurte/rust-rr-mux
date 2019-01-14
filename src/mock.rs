@@ -33,6 +33,7 @@ pub struct MockResponse<ID, ADDR, RESP, ERR> {
 pub type MockTransaction<ID, ADDR, REQ, RESP, ERR> = Muxed<MockRequest<ID, ADDR, REQ, RESP, ERR>, MockResponse<ID, ADDR, RESP, ERR>>;
 
 /// MockConnector provides an expectation based mock connector implementation
+#[derive(Clone)]
 pub struct MockConnector<ID, ADDR, REQ, RESP, ERR> 
 {
     transactions: Arc<Mutex<VecDeque<MockTransaction<ID, ADDR, REQ, RESP, ERR>>>>,
@@ -67,7 +68,7 @@ where
     }
 }
 
-impl <ID, ADDR, REQ, RESP, ERR> Connector <ID, ADDR, REQ, RESP, ERR> for MockConnector <ID, ADDR, REQ, RESP, ERR> 
+impl <ID, ADDR, REQ, RESP, ERR, CTX> Connector <ID, ADDR, REQ, RESP, ERR, CTX> for MockConnector <ID, ADDR, REQ, RESP, ERR> 
 where
     ID: PartialEq + Debug + 'static,
     ADDR: PartialEq + Debug + 'static,
@@ -77,7 +78,7 @@ where
 {
     /// Make a request and return the pre-set response
     /// This checks the request against the specified expectations
-    fn request(&mut self, _id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR>> {
+    fn request(&mut self, _ctx: &mut CTX, _id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR>> {
         
         let mut transactions = self.transactions.lock().unwrap();
         
@@ -92,7 +93,7 @@ where
 
     /// Make a response
     /// This checks the response against provided expectations
-    fn respond(&mut self, _id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR>> {
+    fn respond(&mut self, _ctx: &mut CTX, _id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR>> {
         let mut transactions = self.transactions.lock().unwrap();
 
         let transaction = transactions.pop_front().expect("no more transactions available");
