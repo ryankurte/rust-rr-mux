@@ -58,7 +58,8 @@ where
     REQ: std::fmt::Debug + 'static,
     RESP: std::fmt::Debug + 'static,
     ERR: std::fmt::Debug + 'static,
-    SENDER: FnMut(&mut CTX, ID, Muxed<REQ, RESP>, ADDR) -> Box<Future<Item=(), Error=ERR>> + 'static,
+    SENDER: FnMut(CTX, ID, Muxed<REQ, RESP>, ADDR) -> Box<Future<Item=(), Error=ERR>> + 'static,
+    CTX: Clone + 'static,
 {
     /// Create a new mux over the provided sender
     pub fn new(sender: SENDER) -> Mux<ID, ADDR, REQ, RESP, ERR, SENDER, CTX> {
@@ -72,26 +73,32 @@ where
         }
     }
 
-    /// Handle a received message
+    /// Handle a muxed received message
     /// This either returns a pending response or passes request messages on
-    pub fn handle(&mut self, id: ID, addr: ADDR, resp: Muxed<REQ, RESP>) -> Result<Option<(ADDR, REQ)>, ERR> {
-        let r = match resp {
+    pub fn handle(&mut self, id: ID, addr: ADDR, message: Muxed<REQ, RESP>) -> Result<Option<(ADDR, REQ)>, ERR> {
+        let r = match message {
             // Requests get passed through the mux
             Muxed::Request(req) => {
                 Some((addr, req))
             },
             // Responses get matched with outstanding requests
             Muxed::Response(resp) => {
-                if let Some(ch) = self.requests.lock().unwrap().remove(&id) {
-                    ch.send(resp).unwrap();
-                } else {
-                    info!("Response id: '{:?}', no request pending", id);
-                }
+                self.handle_resp(id, addr, resp);
                 None
             }
         };
 
         Ok(r)
+    }
+
+    /// Handle a pre-decoded response message
+    pub fn handle_resp(&mut self, id: ID, addr: ADDR, resp: RESP) -> Result<(), ERR> {
+        if let Some(ch) = self.requests.lock().unwrap().remove(&id) {
+            ch.send(resp).unwrap();
+        } else {
+            info!("Response id: '{:?}', no request pending", id);
+        }
+        Ok(())
     }
 }
 
@@ -102,11 +109,12 @@ where
     REQ: std::fmt::Debug + 'static,
     RESP: std::fmt::Debug + 'static,
     ERR: std::fmt::Debug + 'static,
-    SENDER: FnMut(&mut CTX, ID, Muxed<REQ, RESP>, ADDR) -> Box<Future<Item=(), Error=ERR>> + 'static,
+    SENDER: FnMut(CTX, ID, Muxed<REQ, RESP>, ADDR) -> Box<Future<Item=(), Error=ERR>> + 'static,
+    CTX: Clone + 'static,
 {
 
     /// Send and register a request
-    fn request(&mut self, ctx: &mut CTX, id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR>> {
+    fn request(&mut self, ctx: CTX, id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR>> {
         // Create future channel
         let (tx, rx) = oneshot::channel();
 
@@ -117,7 +125,7 @@ where
         let sender = self.sender.clone();
         Box::new(futures::lazy(move || {
             let sender = &mut *sender.lock().unwrap();
-            (sender)(ctx, id, Muxed::Request(req), addr)
+            (sender)(ctx.clone(), id, Muxed::Request(req), addr)
         })
         .and_then(|_| {
             // Panic on future closed, this is probably not desirable
@@ -126,7 +134,7 @@ where
         }))
     }
 
-    fn respond(&mut self, ctx: &mut CTX, id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR>> {
+    fn respond(&mut self, ctx: CTX, id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR>> {
         // Send request and return channel future
         let sender = self.sender.clone();
         Box::new(futures::lazy(move || {
