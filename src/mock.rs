@@ -6,27 +6,42 @@ use std::fmt::Debug;
 use futures::prelude::*;
 use futures::future;
 
+use derive_builder::Builder;
+
 use crate::mux::Muxed;
 use crate::connector::Connector;
 
-/// MockResponse is a mocked request expectation
-#[derive(Debug, PartialEq)]
+/// MockRequest is a mocked request expectation with a provided response
+#[derive(Debug, PartialEq, Builder)]
 pub struct MockRequest<ID, ADDR, REQ, RESP, ERR> {
-    id: ID,
+    id: Option<ID>,
     to: ADDR,
     req: REQ,
     from: ADDR,
     resp: RESP,
-    err: ERR,
+    err: Option<ERR>,
+}
+
+impl <ID, ADDR, REQ, RESP, ERR> MockRequest<ID, ADDR, REQ, RESP, ERR> {
+    pub fn new(to: ADDR, from: ADDR, req: REQ, resp: RESP) -> MockRequest<ID, ADDR, REQ, RESP, ERR> {
+        MockRequest{id: None, to, req, from, resp, err: None}
+    }
 }
 
 /// MockResponse is a mocked response expectation
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Builder)]
 pub struct MockResponse<ID, ADDR, RESP, ERR> {
-    id: ID,
+    id: Option<ID>,
     to: ADDR,
+    from: ADDR,
     resp: RESP,
-    err: ERR,
+    err: Option<ERR>,
+}
+
+impl <ID, ADDR, RESP, ERR> MockResponse<ID, ADDR, RESP, ERR> {
+    pub fn new(to: ADDR, from: ADDR, resp: RESP) -> MockResponse<ID, ADDR, RESP, ERR> {
+        MockResponse{id: None, to, from, resp, err: None}
+    }
 }
 
 // MockTransaction is a transaction expectation
@@ -70,15 +85,15 @@ where
 
 impl <ID, ADDR, REQ, RESP, ERR, CTX> Connector <ID, ADDR, REQ, RESP, ERR, CTX> for MockConnector <ID, ADDR, REQ, RESP, ERR> 
 where
-    ID: PartialEq + Debug + 'static,
-    ADDR: PartialEq + Debug + 'static,
-    REQ: PartialEq + Debug + 'static,
-    RESP: PartialEq + Debug + 'static,
-    ERR: PartialEq + Debug + 'static,
+    ID: PartialEq + Debug + Send + 'static,
+    ADDR: PartialEq + Debug + Send + 'static,
+    REQ: PartialEq + Debug + Send + 'static,
+    RESP: PartialEq + Debug + Send + 'static,
+    ERR: PartialEq + Debug + Send + 'static,
 {
     /// Make a request and return the pre-set response
     /// This checks the request against the specified expectations
-    fn request(&mut self, _ctx: CTX, _id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR>> {
+    fn request(&mut self, _ctx: CTX, _id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static> {
         
         let mut transactions = self.transactions.lock().unwrap();
         
@@ -94,7 +109,7 @@ where
 
     /// Make a response
     /// This checks the response against provided expectations
-    fn respond(&mut self, _ctx: CTX, _id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR>> {
+    fn respond(&mut self, _ctx: CTX, _id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static> {
         let mut transactions = self.transactions.lock().unwrap();
 
         let transaction = transactions.pop_front()

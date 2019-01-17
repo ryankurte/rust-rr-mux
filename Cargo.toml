@@ -10,4 +10,5 @@ license = "MIT"
 [dependencies]
 futures = "0.1.25"
 log = "0.4.6"
+derive_builder = "0.7.0"
 
