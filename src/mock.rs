@@ -17,14 +17,13 @@ pub struct MockRequest<ID, ADDR, REQ, RESP, ERR> {
     id: Option<ID>,
     to: ADDR,
     req: REQ,
-    from: ADDR,
     resp: RESP,
     err: Option<ERR>,
 }
 
 impl <ID, ADDR, REQ, RESP, ERR> MockRequest<ID, ADDR, REQ, RESP, ERR> {
-    pub fn new(to: ADDR, from: ADDR, req: REQ, resp: RESP) -> MockRequest<ID, ADDR, REQ, RESP, ERR> {
-        MockRequest{id: None, to, req, from, resp, err: None}
+    pub fn new(to: ADDR, req: REQ, resp: RESP) -> MockRequest<ID, ADDR, REQ, RESP, ERR> {
+        MockRequest{id: None, to, req, resp, err: None}
     }
 }
 
@@ -33,14 +32,13 @@ impl <ID, ADDR, REQ, RESP, ERR> MockRequest<ID, ADDR, REQ, RESP, ERR> {
 pub struct MockResponse<ID, ADDR, RESP, ERR> {
     id: Option<ID>,
     to: ADDR,
-    from: ADDR,
     resp: RESP,
     err: Option<ERR>,
 }
 
 impl <ID, ADDR, RESP, ERR> MockResponse<ID, ADDR, RESP, ERR> {
-    pub fn new(to: ADDR, from: ADDR, resp: RESP) -> MockResponse<ID, ADDR, RESP, ERR> {
-        MockResponse{id: None, to, from, resp, err: None}
+    pub fn new(to: ADDR, resp: RESP) -> MockResponse<ID, ADDR, RESP, ERR> {
+        MockResponse{id: None, to, resp, err: None}
     }
 }
 
