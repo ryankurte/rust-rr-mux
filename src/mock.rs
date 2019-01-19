@@ -2,9 +2,10 @@
 use std::sync::{Mutex, Arc};
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::time::Duration;
 
 use futures::prelude::*;
-use futures::future;
+use futures::future::{ok, err, Either};
 
 use derive_builder::Builder;
 
@@ -16,13 +17,15 @@ use crate::connector::Connector;
 pub struct MockRequest<ADDR, REQ, RESP, ERR> {
     to: ADDR,
     req: REQ,
-    resp: RESP,
-    err: Option<ERR>,
+    resp: Result<RESP, ERR>,
+    delay: Option<Duration>,
 }
 
 impl <ADDR, REQ, RESP, ERR> MockRequest<ADDR, REQ, RESP, ERR> {
-    pub fn new(to: ADDR, req: REQ, resp: RESP) -> MockRequest<ADDR, REQ, RESP, ERR> {
-        MockRequest{to, req, resp, err: None}
+    /// Create a new mock request.
+    /// You probably want to use MockTransaction::request instead of constructing this directly
+    pub fn new(to: ADDR, req: REQ, resp: Result<RESP, ERR>) -> MockRequest<ADDR, REQ, RESP, ERR> {
+        MockRequest{to, req, resp, delay: None}
     }
 }
 
@@ -35,8 +38,15 @@ pub struct MockResponse<ADDR, RESP, ERR> {
 }
 
 impl <ADDR, RESP, ERR> MockResponse<ADDR, RESP, ERR> {
-    pub fn new(to: ADDR, resp: RESP) -> MockResponse<ADDR, RESP, ERR> {
-        MockResponse{to, resp, err: None}
+    /// Create a new mock response.
+    /// You probably want to use MockTransaction::response instead of constructing this directly
+    pub fn new(to: ADDR, resp: RESP, err: Option<ERR>) -> MockResponse<ADDR, RESP, ERR> {
+        MockResponse{to, resp: resp, err: err}
+    }
+
+    pub fn with_error(mut self, err: ERR) -> Self {
+        self.err = Some(err);
+        self
     }
 }
 
@@ -46,13 +56,13 @@ pub type MockTransaction<ADDR, REQ, RESP, ERR> = Muxed<MockRequest<ADDR, REQ, RE
 impl <ADDR, REQ, RESP, ERR> MockTransaction <ADDR, REQ, RESP, ERR> {
 
     /// Create a mock request -> response transaction
-    pub fn request<_REQ: Into<REQ>, _RESP: Into<RESP>>(to: ADDR, req: _REQ, resp: _RESP) -> MockTransaction <ADDR, REQ, RESP, ERR> {
-        Muxed::Request(MockRequest::new(to, req.into(), resp.into()))
+    pub fn request<_REQ: Into<REQ>, _RESP: Into<RESP>, _ERR: Into<ERR>>(to: ADDR, req: _REQ, resp: Result<_RESP, _ERR>) -> MockTransaction <ADDR, REQ, RESP, ERR> {
+        Muxed::Request(MockRequest::new(to, req.into(), resp.map(|v| v.into()).map_err(|e| e.into())))
     }
 
     /// Create a mock response transaction
-    pub fn response<_RESP: Into<RESP>>(to: ADDR, resp: _RESP) -> MockTransaction <ADDR, REQ, RESP, ERR> {
-        Muxed::Response(MockResponse::new(to, resp.into()))
+    pub fn response<_RESP: Into<RESP>, _ERR: Into<ERR>>(to: ADDR, resp: _RESP, err: Option<_ERR>) -> MockTransaction <ADDR, REQ, RESP, ERR> {
+        Muxed::Response(MockResponse::new(to, resp.into(), err.map(|v| v.into())))
     }
 }
 
@@ -115,7 +125,10 @@ where
         assert_eq!(request.to, addr, "destination mismatch");
         assert_eq!(request.req, req, "request mismatch");
 
-        Box::new(future::ok(request.resp))
+        Box::new(match request.resp {
+            Ok(r) => ok(r),
+            Err(e) => err(e),
+        })
     }
 
     /// Make a response
@@ -130,6 +143,9 @@ where
         assert_eq!(response.to, addr, "destination mismatch");
         assert_eq!(response.resp, resp, "request mismatch");
         
-        Box::new(future::ok(()))
+        Box::new(match response.err {
+            Some(e) => err(e),
+            None => ok(()),
+        })
     }
 }
