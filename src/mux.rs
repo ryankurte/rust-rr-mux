@@ -36,32 +36,55 @@ impl <REQ, RESP> Muxed<REQ, RESP> {
 }
 
 /// Mux is a futures based request response multiplexer
-/// ID is the request ID type
-/// ADDR is the address for the REQ or RESP to be sent to
+/// REQ_ID is the request REQ_ID type
+/// TARGET is the target for the REQ or RESP to be sent to
 /// REQ and RESP are the request and response messages
+/// CTX is a a shared context
 /// SENDER is a futures-based sender for sending messages
-#[derive(Clone)]
-pub struct Mux<ID, ADDR, REQ, RESP, ERR, SENDER, CTX> {
-    requests: Arc<Mutex<HashMap<ID, Box<OneshotSender<RESP>>>>>,
+pub struct Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> {
+    requests: Arc<Mutex<HashMap<REQ_ID, Box<OneshotSender<RESP>>>>>,
     sender: Arc<Mutex<SENDER>>,
-    _addr: PhantomData<ADDR>,
+
+    _addr: PhantomData<TARGET>,
     _req: PhantomData<REQ>,
     _err: PhantomData<ERR>,
     _ctx: PhantomData<CTX>,
 }
 
-impl <ID, ADDR, REQ, RESP, ERR, SENDER, CTX> Mux <ID, ADDR, REQ, RESP, ERR, SENDER, CTX> 
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> Clone for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> 
 where
-    ID: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + 'static,
-    ADDR: Debug + Send + 'static,
-    REQ: Debug + Send + 'static,
-    RESP: Debug + Send + 'static,
-    ERR: Debug + Send + 'static,
-    SENDER: FnMut(CTX, ID, Muxed<REQ, RESP>, ADDR) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
-    CTX: Clone + Send + 'static,
+    REQ_ID: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Sync + Send + 'static,
+    TARGET: Debug + Sync +Send + 'static,
+    REQ: Debug + Sync + Send + 'static,
+    RESP: Debug + Sync +Send + 'static,
+    ERR: Debug + Sync + Send + 'static,
+    CTX: Clone + Sync +Send + 'static,
+    SENDER: FnMut(CTX, REQ_ID, Muxed<REQ, RESP>, TARGET) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
+{
+    fn clone(&self) -> Self {
+        Mux{
+            requests: self.requests.clone(),
+            sender: self.sender.clone(),
+            _ctx: PhantomData,
+            _addr: PhantomData,
+            _req: PhantomData,
+            _err: PhantomData,
+        }
+    }
+}
+
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> 
+where
+    REQ_ID: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Sync + Send + 'static,
+    TARGET: Debug + Sync +Send + 'static,
+    REQ: Debug + Sync + Send + 'static,
+    RESP: Debug + Sync +Send + 'static,
+    ERR: Debug + Sync + Send + 'static,
+    CTX: Clone + Sync +Send + 'static,
+    SENDER: FnMut(CTX, REQ_ID, Muxed<REQ, RESP>, TARGET) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
 {
     /// Create a new mux over the provided sender
-    pub fn new(sender: SENDER) -> Mux<ID, ADDR, REQ, RESP, ERR, SENDER, CTX> {
+    pub fn new(sender: SENDER) -> Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> {
         Mux{
             requests: Arc::new(Mutex::new(HashMap::new())), 
             sender: Arc::new(Mutex::new(sender)),
@@ -74,7 +97,7 @@ where
 
     /// Handle a muxed received message
     /// This either returns a pending response or passes request messages on
-    pub fn handle(&mut self, id: ID, addr: ADDR, message: Muxed<REQ, RESP>) -> Result<Option<(ADDR, REQ)>, ERR> {
+    pub fn handle(&mut self, id: REQ_ID, addr: TARGET, message: Muxed<REQ, RESP>) -> Result<Option<(TARGET, REQ)>, ERR> {
         let r = match message {
             // Requests get passed through the mux
             Muxed::Request(req) => {
@@ -82,7 +105,7 @@ where
             },
             // Responses get matched with outstanding requests
             Muxed::Response(resp) => {
-                self.handle_resp(id, addr, resp);
+                self.handle_resp(id, addr, resp)?;
                 None
             }
         };
@@ -91,7 +114,7 @@ where
     }
 
     /// Handle a pre-decoded response message
-    pub fn handle_resp(&mut self, id: ID, addr: ADDR, resp: RESP) -> Result<(), ERR> {
+    pub fn handle_resp(&mut self, id: REQ_ID, _target: TARGET, resp: RESP) -> Result<(), ERR> {
         if let Some(ch) = self.requests.lock().unwrap().remove(&id) {
             ch.send(resp).unwrap();
         } else {
@@ -101,19 +124,19 @@ where
     }
 }
 
-impl <ID, ADDR, REQ, RESP, ERR, SENDER, CTX> Connector <ID, ADDR, REQ, RESP, ERR, CTX> for Mux <ID, ADDR, REQ, RESP, ERR, SENDER, CTX> 
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> Connector <REQ_ID, TARGET, REQ, RESP, ERR, CTX> for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> 
 where
-    ID: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send +'static,
-    ADDR: Debug + Send + 'static,
+    REQ_ID: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send +'static,
+    TARGET: Debug + Send + 'static,
     REQ: Debug + Send + 'static,
     RESP: Debug + Send + 'static,
     ERR: Debug + Send + 'static,
-    SENDER: FnMut(CTX, ID, Muxed<REQ, RESP>, ADDR) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
     CTX: Clone + Send + 'static,
+    SENDER: FnMut(CTX, REQ_ID, Muxed<REQ, RESP>, TARGET) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
 {
 
     /// Send and register a request
-    fn request(&mut self, ctx: CTX, id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static> {
+    fn request(&mut self, ctx: CTX, id: REQ_ID, addr: TARGET, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static> {
         // Create future channel
         let (tx, rx) = oneshot::channel();
 
@@ -133,7 +156,7 @@ where
         }))
     }
 
-    fn respond(&mut self, ctx: CTX, id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static> {
+    fn respond(&mut self, ctx: CTX, id: REQ_ID, addr: TARGET, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static> {
         // Send request and return channel future
         let sender = self.sender.clone();
         Box::new(futures::lazy(move || {

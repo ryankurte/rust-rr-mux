@@ -56,30 +56,35 @@ pub type MockTransaction<ADDR, REQ, RESP, ERR> = Muxed<MockRequest<ADDR, REQ, RE
 impl <ADDR, REQ, RESP, ERR> MockTransaction <ADDR, REQ, RESP, ERR> {
 
     /// Create a mock request -> response transaction
-    pub fn request<_REQ: Into<REQ>, _RESP: Into<RESP>, _ERR: Into<ERR>>(to: ADDR, req: _REQ, resp: Result<_RESP, _ERR>) -> MockTransaction <ADDR, REQ, RESP, ERR> {
-        Muxed::Request(MockRequest::new(to, req.into(), resp.map(|v| v.into()).map_err(|e| e.into())))
+    pub fn request(to: ADDR, req: REQ, resp: Result<RESP, ERR>) -> MockTransaction <ADDR, REQ, RESP, ERR> {
+        Muxed::Request(MockRequest::new(to, req, resp))
     }
 
     /// Create a mock response transaction
-    pub fn response<_RESP: Into<RESP>, _ERR: Into<ERR>>(to: ADDR, resp: _RESP, err: Option<_ERR>) -> MockTransaction <ADDR, REQ, RESP, ERR> {
-        Muxed::Response(MockResponse::new(to, resp.into(), err.map(|v| v.into())))
+    pub fn response(to: ADDR, resp: RESP, err: Option<ERR>) -> MockTransaction <ADDR, REQ, RESP, ERR> {
+        Muxed::Response(MockResponse::new(to, resp, err))
     }
 }
 
 /// MockConnector provides an expectation based mock connector implementation
 /// to simplify writing tests against modules using the Connector abstraction.
-#[derive(Clone)]
 pub struct MockConnector<ADDR, REQ, RESP, ERR> 
 {
     transactions: Arc<Mutex<VecDeque<MockTransaction<ADDR, REQ, RESP, ERR>>>>,
 }
 
+impl <ADDR, REQ, RESP, ERR>  Clone for MockConnector <ADDR, REQ, RESP, ERR> {
+    fn clone(&self) -> Self {
+        MockConnector{ transactions: self.transactions.clone() }
+    }
+}
+
 impl <ADDR, REQ, RESP, ERR> MockConnector <ADDR, REQ, RESP, ERR> 
 where
-    ADDR: PartialEq + Debug + 'static,
-    REQ: PartialEq + Debug + 'static,
-    RESP: PartialEq + Debug + 'static,
-    ERR: PartialEq + Debug + 'static,
+    ADDR: PartialEq + Debug + Send + 'static,
+    REQ: PartialEq + Debug + Send + 'static,
+    RESP: PartialEq + Debug + Send + 'static,
+    ERR: PartialEq + Debug + Send + 'static,
 {
     /// Create a new mock connector
     pub fn new() -> MockConnector<ADDR, REQ, RESP, ERR> {
@@ -87,13 +92,13 @@ where
     }
 
     /// Set expectations on the connector
-    pub fn expect<E>(mut self, transactions: E) -> Self
+    pub fn expect<E>(&mut self, transactions: E) -> Self
     where
         E: Into<VecDeque<MockTransaction<ADDR, REQ, RESP, ERR>>>,
     {
         *self.transactions.lock().unwrap() = transactions.into();
 
-        self
+        self.clone()
     }
 
     /// Finalise expectations on the connector

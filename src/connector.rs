@@ -2,10 +2,11 @@
 use futures::Future;
 
 /// Connector provides support for making and responding to requests
-pub trait Connector<ID, ADDR, REQ, RESP, ERR, CTX> {
+pub trait Connector<REQ_ID, TARGET, REQ, RESP, ERR, CTX> {
     // Send a request and receive a response or error at some time in the future
-    fn request(&mut self, ctx: CTX, req_id: ID, addr: ADDR, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static>;
+    fn request(&mut self, ctx: CTX, req_id: REQ_ID, target: TARGET, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static>;
 
     // Send a response message
-    fn respond(&mut self, ctx: CTX, req_id: ID, addr: ADDR, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static>;
+    fn respond(&mut self, ctx: CTX, req_id: REQ_ID, target: TARGET, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static>;
 }
+

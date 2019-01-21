@@ -9,6 +9,8 @@ pub use crate::connector::Connector;
 pub mod mux;
 pub use crate::mux::{Mux, Muxed};
 
+pub mod mapped;
+
 pub mod mock;
 
 
