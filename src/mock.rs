@@ -9,8 +9,9 @@ use futures::future::{ok, err, Either};
 
 use derive_builder::Builder;
 
-use crate::mux::Muxed;
 use crate::connector::Connector;
+use crate::muxed::Muxed;
+
 
 /// MockRequest is a mocked request expectation with a provided response
 #[derive(Debug, PartialEq, Builder)]

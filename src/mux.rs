@@ -11,38 +11,17 @@ use futures::sync::mpsc::{channel, Sender as ChannelSender, Receiver as ChannelR
 
 
 use crate::connector::Connector;
+use crate::muxed::Muxed;
 
-/// Muxed is a container for either a request or response message
-#[derive(Debug, PartialEq)]
-pub enum Muxed<REQ, RESP> {
-    Request(REQ),
-    Response(RESP),
-}
 
-impl <REQ, RESP> Muxed<REQ, RESP> {
-    /// Fetch a request if muxed contains a request type
-    pub fn req(self) -> Option<REQ> {
-        match self {
-            Muxed::Request(req) => Some(req),
-            _ => None
-        }
-    }
-
-    /// Fetch a response if muxed contains a response type
-    pub fn resp(self) -> Option<RESP> {
-        match self {
-            Muxed::Response(resp) => Some(resp),
-            _ => None
-        }
-    }
-}
-
-/// Mux is a futures based request response multiplexer
+/// Mux is a futures based request response multiplexer.
+/// This provides a Source interface to drain messages sent, and receives messages via the handle() method,
+/// allowing responses to be consumed and requests forwarded on.
+/// 
 /// REQ_ID is the request REQ_ID type
 /// TARGET is the target for the REQ or RESP to be sent to
 /// REQ and RESP are the request and response messages
 /// CTX is a a shared context
-/// SENDER is a futures-based sender for sending messages
 pub struct Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX> {
     requests: Arc<Mutex<HashMap<REQ_ID, Box<OneshotSender<RESP>>>>>,
 
