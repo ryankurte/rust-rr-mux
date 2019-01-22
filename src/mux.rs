@@ -7,6 +7,8 @@ use std::fmt::Debug;
 
 use futures::prelude::*;
 use futures::sync::{oneshot, oneshot::Sender as OneshotSender};
+use futures::sync::mpsc::{channel, Sender as ChannelSender, Receiver as ChannelReceiver};
+
 
 use crate::connector::Connector;
 
@@ -41,9 +43,11 @@ impl <REQ, RESP> Muxed<REQ, RESP> {
 /// REQ and RESP are the request and response messages
 /// CTX is a a shared context
 /// SENDER is a futures-based sender for sending messages
-pub struct Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> {
+pub struct Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX> {
     requests: Arc<Mutex<HashMap<REQ_ID, Box<OneshotSender<RESP>>>>>,
-    sender: Arc<Mutex<SENDER>>,
+
+    sender: ChannelSender<(REQ_ID, TARGET, Muxed<REQ, RESP>)>,
+    receiver: Arc<Mutex<ChannelReceiver<(REQ_ID, TARGET, Muxed<REQ, RESP>)>>>,
 
     _addr: PhantomData<TARGET>,
     _req: PhantomData<REQ>,
@@ -51,7 +55,7 @@ pub struct Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> {
     _ctx: PhantomData<CTX>,
 }
 
-impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> Clone for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> 
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX> Clone for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX> 
 where
     REQ_ID: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Sync + Send + 'static,
     TARGET: Debug + Sync +Send + 'static,
@@ -59,12 +63,12 @@ where
     RESP: Debug + Sync +Send + 'static,
     ERR: Debug + Sync + Send + 'static,
     CTX: Clone + Sync +Send + 'static,
-    SENDER: FnMut(CTX, REQ_ID, Muxed<REQ, RESP>, TARGET) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
 {
     fn clone(&self) -> Self {
         Mux{
             requests: self.requests.clone(),
             sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
             _ctx: PhantomData,
             _addr: PhantomData,
             _req: PhantomData,
@@ -73,7 +77,7 @@ where
     }
 }
 
-impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> 
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX> Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX> 
 where
     REQ_ID: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Sync + Send + 'static,
     TARGET: Debug + Sync +Send + 'static,
@@ -81,13 +85,15 @@ where
     RESP: Debug + Sync +Send + 'static,
     ERR: Debug + Sync + Send + 'static,
     CTX: Clone + Sync +Send + 'static,
-    SENDER: FnMut(CTX, REQ_ID, Muxed<REQ, RESP>, TARGET) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
 {
     /// Create a new mux over the provided sender
-    pub fn new(sender: SENDER) -> Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> {
+    pub fn new() -> Mux<REQ_ID, TARGET, REQ, RESP, ERR, CTX> {
+        let (tx, rx) = channel(0);
+
         Mux{
             requests: Arc::new(Mutex::new(HashMap::new())), 
-            sender: Arc::new(Mutex::new(sender)),
+            sender: tx,
+            receiver: Arc::new(Mutex::new(rx)),
             _ctx: PhantomData,
             _addr: PhantomData,
             _req: PhantomData,
@@ -124,7 +130,7 @@ where
     }
 }
 
-impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> Connector <REQ_ID, TARGET, REQ, RESP, ERR, CTX> for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX, SENDER> 
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX> Connector <REQ_ID, TARGET, REQ, RESP, ERR, CTX> for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX> 
 where
     REQ_ID: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send +'static,
     TARGET: Debug + Send + 'static,
@@ -132,11 +138,10 @@ where
     RESP: Debug + Send + 'static,
     ERR: Debug + Send + 'static,
     CTX: Clone + Send + 'static,
-    SENDER: FnMut(CTX, REQ_ID, Muxed<REQ, RESP>, TARGET) -> Box<Future<Item=(), Error=ERR> + Send + 'static> + Send + 'static,
 {
 
     /// Send and register a request
-    fn request(&mut self, ctx: CTX, id: REQ_ID, addr: TARGET, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static> {
+    fn request(&mut self, _ctx: CTX, id: REQ_ID, addr: TARGET, req: REQ) -> Box<Future<Item=RESP, Error=ERR> + Send + 'static> {
         // Create future channel
         let (tx, rx) = oneshot::channel();
 
@@ -146,22 +151,30 @@ where
         // Send request and return channel future
         let sender = self.sender.clone();
         Box::new(futures::lazy(move || {
-            let sender = &mut *sender.lock().unwrap();
-            (sender)(ctx.clone(), id, Muxed::Request(req), addr)
+            sender.send((id, addr, Muxed::Request(req))).map(|_r| () ).map_err(|_e| panic!() )
         })
         .and_then(|_| {
             // Panic on future closed, this is probably not desirable
-            // TODO: fix
+            // TODO: fix this
             rx.map_err(|_e| panic!() )
         }))
     }
 
-    fn respond(&mut self, ctx: CTX, id: REQ_ID, addr: TARGET, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static> {
+    fn respond(&mut self, _ctx: CTX, id: REQ_ID, addr: TARGET, resp: RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static> {
         // Send request and return channel future
         let sender = self.sender.clone();
         Box::new(futures::lazy(move || {
-            let sender = &mut *sender.lock().unwrap();
-            (sender)(ctx, id, Muxed::Response(resp), addr)
+            sender.send((id, addr, Muxed::Response(resp))).map(|_r| () ).map_err(|_e| panic!() )
         }))
+    }
+}
+
+impl <REQ_ID, TARGET, REQ, RESP, ERR, CTX> Stream for Mux <REQ_ID, TARGET, REQ, RESP, ERR, CTX> {
+    type Item = (REQ_ID, TARGET, Muxed<REQ, RESP>);
+    type Error = ();
+
+    // Poll to read pending requests
+    fn poll(&mut self) -> Result<Async<Option<Self::Item>>, Self::Error> {
+        self.receiver.lock().unwrap().poll()
     }
 }
