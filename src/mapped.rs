@@ -1,12 +1,7 @@
-
-
-use std::sync::{Mutex, Arc};
-use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 
 use futures::prelude::*;
-use futures::sync::{oneshot, oneshot::Sender as OneshotSender};
 
 use crate::connector::Connector;
 use crate::muxed::Muxed;
@@ -21,38 +16,45 @@ pub trait Mapper {
 }
 
 /// Mapped wraps a connector type with a Mapper implementation
-pub struct Mapped<BASE_REQ, BASE_RESP, MAPPED_REQ, MAPPED_RESP, REQ_ID, TARGET, ERR, CTX, CONN, MAPPER> 
-{
-    conn: CONN,
-    mapper: MAPPER,
+pub struct Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M> {
+    conn: Conn,
+    mapper: M,
 
-    _req_id: PhantomData<REQ_ID>,
-    _target: PhantomData<TARGET>,
+    _req_id: PhantomData<ReqId>,
+    _target: PhantomData<Target>,
 
-    _base_req: PhantomData<BASE_REQ>,
-    _base_resp: PhantomData<BASE_RESP>,
-    _mapped_req: PhantomData<MAPPED_REQ>,
-    _mapped_resp: PhantomData<MAPPED_RESP>,
+    _base_req: PhantomData<BaseReq>,
+    _base_resp: PhantomData<BaseResp>,
+    _mapped_req: PhantomData<MappedReq>,
+    _mapped_resp: PhantomData<MappedResp>,
 
-    _err: PhantomData<ERR>,
-    _ctx: PhantomData<CTX>,
+    _err: PhantomData<E>,
+    _ctx: PhantomData<Ctx>,
 }
 
-impl <BASE_REQ, BASE_RESP, MAPPED_REQ, MAPPED_RESP, REQ_ID, TARGET, ERR, CTX, CONN, MAPPER> Mapped <BASE_REQ, BASE_RESP, MAPPED_REQ, MAPPED_RESP, REQ_ID, TARGET, ERR, CTX, CONN, MAPPER> 
+impl<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
+    Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
 where
-    REQ_ID: std::cmp::Eq + std::hash::Hash + Debug + Clone + Sync + Send + 'static,
-    TARGET: Debug + Sync + Send + 'static,
-    BASE_REQ: Debug + Sync + Send + 'static,
-    BASE_RESP: Debug + Sync + Send + 'static,
-    MAPPED_REQ: Debug + Send + 'static,
-    MAPPED_RESP: Debug + Send + 'static,
-    ERR: Debug + Sync + Send + 'static,
-    CTX: Clone + Sync + Send + 'static,
-    CONN: Connector<REQ_ID, TARGET, BASE_REQ, BASE_RESP, ERR, CTX> + Sync + 'static,
-    MAPPER: Mapper<Original=Muxed<BASE_REQ, BASE_RESP>, Mapped=Muxed<MAPPED_REQ, MAPPED_RESP>> +  Clone + Sync + Send + 'static,
+    ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Sync + Send + 'static,
+    Target: Debug + Sync + Send + 'static,
+    BaseReq: Debug + Sync + Send + 'static,
+    BaseResp: Debug + Sync + Send + 'static,
+    MappedReq: Debug + Send + 'static,
+    MappedResp: Debug + Send + 'static,
+    E: Debug + Sync + Send + 'static,
+    Ctx: Clone + Sync + Send + 'static,
+    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + 'static,
+    M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>>
+        + Clone
+        + Sync
+        + Send
+        + 'static,
 {
-    pub fn new(conn: CONN, mapper: MAPPER) -> Mapped<BASE_REQ, BASE_RESP, MAPPED_REQ, MAPPED_RESP, REQ_ID, TARGET, ERR, CTX, CONN, MAPPER> {
-        Mapped{
+    pub fn new(
+        conn: Conn,
+        mapper: M,
+    ) -> Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M> {
+        Mapped {
             conn,
             mapper,
 
@@ -70,45 +72,62 @@ where
     }
 }
 
-impl <BASE_REQ, BASE_RESP, MAPPED_REQ, MAPPED_RESP, REQ_ID, TARGET, ERR, CTX, CONN, MAPPER> Connector<REQ_ID, TARGET, MAPPED_REQ, MAPPED_RESP, ERR, CTX> for Mapped <BASE_REQ, BASE_RESP, MAPPED_REQ, MAPPED_RESP, REQ_ID, TARGET, ERR, CTX, CONN, MAPPER> 
+impl<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
+    Connector<ReqId, Target, MappedReq, MappedResp, E, Ctx>
+    for Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
 where
-    REQ_ID: std::cmp::Eq + std::hash::Hash + Debug + Clone + Sync + Send + 'static,
-    TARGET: Debug + Sync + Send + 'static,
-    BASE_REQ: Debug + Sync + Send + 'static,
-    BASE_RESP: Debug + Sync + Send + 'static,
-    MAPPED_REQ: Debug + Send + 'static,
-    MAPPED_RESP: Debug + Send + 'static,
-    ERR: Debug + Sync + Send + 'static,
-    CTX: Clone + Sync + Send + 'static,
-    CONN: Connector<REQ_ID, TARGET, BASE_REQ, BASE_RESP, ERR, CTX> + Sync + 'static,
-    MAPPER: Mapper<Original=Muxed<BASE_REQ, BASE_RESP>, Mapped=Muxed<MAPPED_REQ, MAPPED_RESP>> + Clone + Sync + Send + 'static,
+    ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Sync + Send + 'static,
+    Target: Debug + Sync + Send + 'static,
+    BaseReq: Debug + Sync + Send + 'static,
+    BaseResp: Debug + Sync + Send + 'static,
+    MappedReq: Debug + Send + 'static,
+    MappedResp: Debug + Send + 'static,
+    E: Debug + Sync + Send + 'static,
+    Ctx: Clone + Sync + Send + 'static,
+    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + 'static,
+    M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>>
+        + Clone
+        + Sync
+        + Send
+        + 'static,
 {
-    fn request(&mut self, ctx: CTX, req_id: REQ_ID, target: TARGET, req: MAPPED_REQ) -> Box<Future<Item=MAPPED_RESP, Error=ERR> + Send + 'static> { 
+    fn request(
+        &mut self,
+        ctx: Ctx,
+        req_id: ReqId,
+        target: Target,
+        req: MappedReq,
+    ) -> Box<Future<Item = MappedResp, Error = E> + Send + 'static> {
         let m = self.mapper.clone();
 
         let req = self.mapper.outgoing(Muxed::Request(req));
-        Box::new(self.conn.request(ctx, req_id, target, req.req().unwrap()).map(move |resp| {
-            m.incoming(Muxed::Response(resp)).resp().unwrap()
-        }))
+        Box::new(
+            self.conn
+                .request(ctx, req_id, target, req.req().unwrap())
+                .map(move |resp| m.incoming(Muxed::Response(resp)).resp().unwrap()),
+        )
     }
 
-    fn respond(&mut self, ctx: CTX, req_id: REQ_ID, target: TARGET, resp: MAPPED_RESP) -> Box<Future<Item=(), Error=ERR> + Send + 'static> {       
+    fn respond(
+        &mut self,
+        ctx: Ctx,
+        req_id: ReqId,
+        target: Target,
+        resp: MappedResp,
+    ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
         let resp = self.mapper.outgoing(Muxed::Response(resp));
         Box::new(self.conn.respond(ctx, req_id, target, resp.resp().unwrap()))
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-
-    use crate::mux::Mux;
-    use crate::muxed::Muxed;
-    use crate::mock::{MockConnector, MockTransaction};
     use crate::mapped::{Mapped, Mapper};
+    use crate::mock::{MockConnector, MockTransaction};
+    use crate::muxed::Muxed;
 
-    use futures::future::Future;
     use crate::connector::Connector;
+    use futures::future::Future;
 
     #[derive(PartialEq, Debug, Clone)]
     struct A(u64);
@@ -116,7 +135,7 @@ mod tests {
     struct B(u64);
 
     #[derive(Clone)]
-    struct MapImpl ();
+    struct MapImpl();
 
     impl Mapper for MapImpl {
         type Original = Muxed<A, A>;
@@ -139,10 +158,14 @@ mod tests {
     #[test]
     fn test_mapping() {
         // Create mock mux
-        let mut m = MockConnector::<u16, A, A, ()>::new();
+        let mut m = MockConnector::<u16, A, A, (), ()>::new();
 
         // Build wrapper
-        let mut w = Mapped::<A, A, B, B, u64, u16, (), (), MockConnector::<u16, A, A, ()>, MapImpl>::new(m.clone(), MapImpl());
+        let mut w =
+            Mapped::<A, A, B, B, u64, u16, (), (), MockConnector<u16, A, A, (), ()>, MapImpl>::new(
+                m.clone(),
+                MapImpl(),
+            );
 
         m.expect(vec![
             MockTransaction::request(1, A(0), Ok(A(1))),
@@ -157,4 +180,3 @@ mod tests {
         m.finalise();
     }
 }
-
