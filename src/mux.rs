@@ -79,10 +79,7 @@ where
     /// Handle a muxed received message
     /// This either returns a pending response or passes request messages on
     pub fn handle(
-        &mut self,
-        id: ReqId,
-        addr: Target,
-        message: Muxed<Req, Resp>,
+        &mut self, id: ReqId, addr: Target, message: Muxed<Req, Resp>,
     ) -> Result<Option<(Target, Req)>, E> {
         let r = match message {
             // Requests get passed through the mux
@@ -120,11 +117,7 @@ where
 {
     /// Send and register a request
     fn request(
-        &mut self,
-        _ctx: Ctx,
-        id: ReqId,
-        addr: Target,
-        req: Req,
+        &mut self, _ctx: Ctx, id: ReqId, addr: Target, req: Req,
     ) -> Box<Future<Item = Resp, Error = E> + Send + 'static> {
         // Create future channel
         let (tx, rx) = oneshot::channel();
@@ -153,11 +146,7 @@ where
     }
 
     fn respond(
-        &mut self,
-        _ctx: Ctx,
-        id: ReqId,
-        addr: Target,
-        resp: Resp,
+        &mut self, _ctx: Ctx, id: ReqId, addr: Target, resp: Resp,
     ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
         // Send request and return channel future
         let sender = self.sender.clone();

@@ -66,9 +66,7 @@ pub type MockTransaction<Addr, Req, Resp, E> =
 impl<Addr, Req, Resp, E> MockTransaction<Addr, Req, Resp, E> {
     /// Create a mock request -> response transaction
     pub fn request(
-        to: Addr,
-        req: Req,
-        resp: Result<Resp, E>,
+        to: Addr, req: Req, resp: Result<Resp, E>,
     ) -> MockTransaction<Addr, Req, Resp, E> {
         Muxed::Request(MockRequest::new(to, req, resp))
     }
@@ -145,11 +143,7 @@ where
     /// Make a request and return the pre-set response
     /// This checks the request against the specified expectations
     fn request(
-        &mut self,
-        _ctx: Ctx,
-        _id: Id,
-        addr: Addr,
-        req: Req,
+        &mut self, _ctx: Ctx, _id: Id, addr: Addr, req: Req,
     ) -> Box<Future<Item = Resp, Error = E> + Send + 'static> {
         let mut transactions = self.transactions.lock().unwrap();
 
@@ -171,11 +165,7 @@ where
     /// Make a response
     /// This checks the response against provided expectations
     fn respond(
-        &mut self,
-        _ctx: Ctx,
-        _id: Id,
-        addr: Addr,
-        resp: Resp,
+        &mut self, _ctx: Ctx, _id: Id, addr: Addr, resp: Resp,
     ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
         let mut transactions = self.transactions.lock().unwrap();
 

@@ -51,8 +51,7 @@ where
         + 'static,
 {
     pub fn new(
-        conn: Conn,
-        mapper: M,
+        conn: Conn, mapper: M,
     ) -> Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M> {
         Mapped {
             conn,
@@ -92,11 +91,7 @@ where
         + 'static,
 {
     fn request(
-        &mut self,
-        ctx: Ctx,
-        req_id: ReqId,
-        target: Target,
-        req: MappedReq,
+        &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: MappedReq,
     ) -> Box<Future<Item = MappedResp, Error = E> + Send + 'static> {
         let m = self.mapper.clone();
 
@@ -109,11 +104,7 @@ where
     }
 
     fn respond(
-        &mut self,
-        ctx: Ctx,
-        req_id: ReqId,
-        target: Target,
-        resp: MappedResp,
+        &mut self, ctx: Ctx, req_id: ReqId, target: Target, resp: MappedResp,
     ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
         let resp = self.mapper.outgoing(Muxed::Response(resp));
         Box::new(self.conn.respond(ctx, req_id, target, resp.resp().unwrap()))

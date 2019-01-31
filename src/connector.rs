@@ -11,19 +11,11 @@ use futures::Future;
 pub trait Connector<ReqId, Target, Req, Resp, E, Ctx> {
     // Send a request and receive a response or error at some time in the future
     fn request(
-        &mut self,
-        ctx: Ctx,
-        req_id: ReqId,
-        target: Target,
-        req: Req,
+        &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: Req,
     ) -> Box<Future<Item = Resp, Error = E> + Send + 'static>;
 
     // Send a response message
     fn respond(
-        &mut self,
-        ctx: Ctx,
-        req_id: ReqId,
-        target: Target,
-        resp: Resp,
+        &mut self, ctx: Ctx, req_id: ReqId, target: Target, resp: Resp,
     ) -> Box<Future<Item = (), Error = E> + Send + 'static>;
 }
