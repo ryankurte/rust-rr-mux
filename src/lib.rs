@@ -22,3 +22,5 @@ pub use mapped::{Mapped, Mapper};
 /// Mock is a mock connector implementation that allows expectation based testing of modules that consume
 /// the Connector interface
 pub mod mock;
+
+pub mod wire;
