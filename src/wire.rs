@@ -25,7 +25,7 @@ pub struct Wire <ReqId, Target, Req, Resp, E, Ctx, H, I> {
 impl <ReqId, Target, Req, Resp, E, Ctx, H, I> Clone for Wire<ReqId, Target, Req, Resp, E, Ctx, H, I>
 where
     Target: Hash + PartialEq + Eq,
-    H: FnMut(Req) -> Box<Future<Item=Resp, Error=E> + Sync + Send> + Clone + 'static,
+    H: FnMut(I, Target, Req) -> Box<Future<Item=Resp, Error=E> + Sync + Send> + Clone + 'static,
 {
     fn clone(&self) -> Self {
         Wire {
@@ -45,7 +45,7 @@ impl <ReqId, Target, Req, Resp, E, Ctx, H, I> Wire<ReqId, Target, Req, Resp, E, 
 where
     Target: Hash + PartialEq + Eq,
     I: Clone + Send + Sync + 'static,
-    H: FnMut(I, Req) -> Box<Future<Item=Resp, Error=E>> + 'static,
+    H: FnMut(I, Target, Req) -> Box<Future<Item=Resp, Error=E>> + 'static,
 {
     pub fn new(handler: H) -> Wire<ReqId, Target, Req, Resp, E, Ctx, H, I>  {
         Wire{
@@ -91,6 +91,12 @@ impl <ReqId, Target, Req, Resp, E, Ctx> WireMux<ReqId, Target, Req, Resp, E, Ctx
     }
 }
 
+
+impl <ReqId, Target, Req, Resp, E, Ctx> Clone for WireMux<ReqId, Target, Req, Resp, E, Ctx> {
+    fn clone(&self) -> Self {
+        WireMux::new()
+    }
+}
 impl <ReqId, Target, Req, Resp, E, Ctx> Connector<ReqId, Target, Req, Resp, E, Ctx> for WireMux <ReqId, Target, Req, Resp, E, Ctx> 
 where
     ReqId: PartialEq + Debug + Send + 'static,
@@ -129,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_Wire() {
-        let mut i: Wire<u16, u64, u32, u32, (), (), _, _> = Wire::new(|inst, req| {
+        let mut i: Wire<u16, u64, u32, u32, (), (), _, _> = Wire::new(|inst, addr, req| {
             Box::new(ok(req+1))
         });
 
