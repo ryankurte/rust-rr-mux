@@ -12,6 +12,3 @@ futures = "0.1.25"
 log = "0.4.6"
 derive_builder = "0.7.0"
 
-[dev-dependencies]
-tokio = "0.1.15"
-
