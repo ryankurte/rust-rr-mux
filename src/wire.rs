@@ -7,20 +7,18 @@ use std::clone::Clone;
 use std::fmt::Debug;
 
 use futures::prelude::*;
-use futures::future::{Future, lazy, ok};
+use futures::future::{Future, ok};
 use futures::sync::mpsc;
 use futures::sync::oneshot;
 
 use crate::connector::Connector;
 
+/// Wire provides an interconnect to support integration testing of Mux based implementations
 pub struct Wire <ReqId, Target, Req, Resp, E, Ctx> {
     connectors: Arc<Mutex<HashMap<Target, WireMux<ReqId, Target, Req, Resp, E, Ctx>>>>,
 
     requests: Arc<Mutex<HashMap<(Target, Target, ReqId), oneshot::Sender<Resp>>>>,
 
-    _req_id: PhantomData<ReqId>, 
-    _req: PhantomData<Req>, 
-    _resp: PhantomData<Resp>, 
     _e: PhantomData<E>, 
     _ctx: PhantomData<Ctx>,
 }
@@ -39,9 +37,6 @@ where
             connectors: self.connectors.clone(),
             requests: self.requests.clone(),
 
-            _req_id: PhantomData,
-            _req: PhantomData,
-            _resp: PhantomData,
             _e: PhantomData,
             _ctx: PhantomData,
         }
@@ -57,19 +52,18 @@ where
     E: PartialEq + Debug + Send + 'static,
     Ctx: Clone + PartialEq + Debug + Send + 'static,
 {
+    /// Create a new Wire interconnect
     pub fn new() -> Wire<ReqId, Target, Req, Resp, E, Ctx>  {
         Wire{
             connectors: Arc::new(Mutex::new(HashMap::new())),
             requests: Arc::new(Mutex::new(HashMap::new())),
 
-            _req_id: PhantomData,
-            _req: PhantomData,
-            _resp: PhantomData,
             _e: PhantomData,
             _ctx: PhantomData,
         }
     }
 
+    /// Create a new connector for the provided target address
     pub fn connector(&mut self, target: Target) -> WireMux<ReqId, Target, Req, Resp, E, Ctx> {
         let w = WireMux::new(self.clone(), target.clone());
 
@@ -78,7 +72,7 @@ where
         w
     }
 
-    fn request(&mut self, to: Target, from: Target, id: ReqId, req: Req) -> impl Future<Item=Resp, Error=()> {
+    fn request(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, req: Req) -> impl Future<Item=Resp, Error=()> {
         // Fetch matching connector
         let connectors = self.connectors.lock().unwrap();
         let mut conn = connectors.get(&to.clone()).unwrap().clone();
@@ -94,9 +88,9 @@ where
         })
     }
 
-    fn respond(&mut self, to: Target, from: Target, id: ReqId, resp: Resp) -> impl Future<Item=(), Error=()> {
+    fn respond(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, resp: Resp) -> impl Future<Item=(), Error=()> {
         let pending = self.requests.lock().unwrap().remove(&(from, to, id)).unwrap();
-        pending.send(resp).map(|_| () ).map_err(|_| () );
+        pending.send(resp).map(|_| () ).map_err(|_| () ).unwrap();
         ok(())
     }
 }
@@ -109,10 +103,6 @@ pub struct WireMux<ReqId, Target, Req, Resp, E, Ctx> {
     receiver_tx: Arc<Mutex<mpsc::Sender<(Target, ReqId, Req)>>>,
     receiver_rx: Arc<Mutex<mpsc::Receiver<(Target, ReqId, Req)>>>,
 
-    _req_id: PhantomData<ReqId>, 
-    _target: PhantomData<Target>,
-    _req: PhantomData<Req>, 
-    _resp: PhantomData<Resp>, 
     _e: PhantomData<E>, 
     _ctx: PhantomData<Ctx>,
 }
@@ -136,10 +126,6 @@ where
             receiver_rx: Arc::new(Mutex::new(rx)),
             receiver_tx: Arc::new(Mutex::new(tx)),
 
-            _req_id: PhantomData,
-            _target: PhantomData,
-            _req: PhantomData,
-            _resp: PhantomData,
             _e: PhantomData,
             _ctx: PhantomData,
         }
@@ -169,10 +155,6 @@ where
             receiver_rx: self.receiver_rx.clone(),
             receiver_tx: self.receiver_tx.clone(),
 
-            _req_id: PhantomData,
-            _target: PhantomData,
-            _req: PhantomData,
-            _resp: PhantomData,
             _e: PhantomData,
             _ctx: PhantomData,
         }
@@ -187,7 +169,7 @@ where
     E: PartialEq + Debug + Send + 'static,
     Ctx: Clone + PartialEq + Debug + Send + 'static,
 {
-        // Send a request and receive a response or error at some time in the future
+    // Send a request and receive a response or error at some time in the future
     fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: Req,
     ) -> Box<Future<Item = Resp, Error = E> + Send + 'static> {
@@ -195,19 +177,19 @@ where
 
         // Send to connector and await response
         Box::new(
-            conn.request(target, self.addr.clone(), req_id, req)
+            conn.request(ctx, target, self.addr.clone(), req_id, req)
             .map_err(|_e| panic!() )
         )
     }
 
-    // Send a response message
+    // Respond to a received request
     fn respond(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, resp: Resp,
     ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
         let mut conn = self.connector.clone();
 
         Box::new(
-            conn.respond(target, self.addr.clone(), req_id, resp)
+            conn.respond(ctx, target, self.addr.clone(), req_id, resp)
             .map_err(|_e| panic!() )
         )
     }
@@ -225,7 +207,7 @@ where
     type Item = (Target, ReqId, Req);
     type Error = ();
 
-    // Poll to read pending requests
+    // Poll to receive pending requests
     fn poll(&mut self) -> Result<Async<Option<Self::Item>>, Self::Error> {
         let rx = self.receiver_rx.clone();
         let mut rx = rx.lock().unwrap();
@@ -236,8 +218,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use tokio::prelude::*;
 
     #[test]
     fn test_wiring() {
@@ -259,7 +239,7 @@ mod tests {
         
         // Run using select
         // a will finish, b will poll forever
-        Future::select(a, b).wait();
+        let _ = Future::select(a, b).wait();
 
     }
 
