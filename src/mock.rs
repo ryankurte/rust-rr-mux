@@ -14,21 +14,24 @@ use crate::muxed::Muxed;
 
 /// MockRequest is a mocked request expectation with a provided response
 #[derive(Debug, PartialEq, Builder)]
-pub struct MockRequest<Addr, Req, Resp, E> {
+pub struct MockRequest<Addr, Req, Resp, Ctx, E> {
     to: Addr,
     req: Req,
-    resp: Result<Resp, E>,
+    ctx: Ctx,
+
+    resp: Result<(Resp, Ctx), E>,
     delay: Option<Duration>,
 }
 
-impl<Addr, Req, Resp, E> MockRequest<Addr, Req, Resp, E> {
+impl<Addr, Req, Resp, Ctx, E> MockRequest<Addr, Req, Resp, Ctx, E> {
     /// Create a new mock request.
     /// You probably want to use MockTransaction::request instead of constructing this directly
-    pub fn new(to: Addr, req: Req, resp: Result<Resp, E>) -> MockRequest<Addr, Req, Resp, E> {
+    pub fn new(to: Addr, req: Req, ctx: Ctx, resp: Result<(Resp, Ctx), E>) -> Self {
         MockRequest {
             to,
             req,
             resp,
+            ctx,
             delay: None,
         }
     }
@@ -36,20 +39,22 @@ impl<Addr, Req, Resp, E> MockRequest<Addr, Req, Resp, E> {
 
 /// MockResponse is a mocked response expectation
 #[derive(Debug, PartialEq, Builder)]
-pub struct MockResponse<Addr, Resp, E> {
+pub struct MockResponse<Addr, Resp, Ctx, E> {
     to: Addr,
     resp: Resp,
     err: Option<E>,
+    ctx: Ctx,
 }
 
-impl<Addr, Resp, E> MockResponse<Addr, Resp, E> {
+impl<Addr, Resp, Ctx, E> MockResponse<Addr, Resp, Ctx, E> {
     /// Create a new mock response.
     /// You probably want to use MockTransaction::response instead of constructing this directly
-    pub fn new(to: Addr, resp: Resp, err: Option<E>) -> MockResponse<Addr, Resp, E> {
+    pub fn new(to: Addr, resp: Resp, ctx: Ctx, err: Option<E>) -> Self {
         MockResponse {
             to,
-            resp: resp,
-            err: err,
+            resp,
+            err,
+            ctx,
         }
     }
 
@@ -60,27 +65,27 @@ impl<Addr, Resp, E> MockResponse<Addr, Resp, E> {
 }
 
 // MockTransaction is a transaction expectation
-pub type MockTransaction<Addr, Req, Resp, E> =
-    Muxed<MockRequest<Addr, Req, Resp, E>, MockResponse<Addr, Resp, E>>;
+pub type MockTransaction<Addr, Req, Resp, Ctx, E> =
+    Muxed<MockRequest<Addr, Req, Resp, Ctx, E>, MockResponse<Addr, Resp, Ctx, E>>;
 
-impl<Addr, Req, Resp, E> MockTransaction<Addr, Req, Resp, E> {
+impl<Addr, Req, Resp, Ctx, E> MockTransaction<Addr, Req, Resp, Ctx, E> {
     /// Create a mock request -> response transaction
     pub fn request(
-        to: Addr, req: Req, resp: Result<Resp, E>,
-    ) -> MockTransaction<Addr, Req, Resp, E> {
-        Muxed::Request(MockRequest::new(to, req, resp))
+        to: Addr, req: Req, ctx: Ctx, resp: Result<(Resp, Ctx), E>,
+    ) -> MockTransaction<Addr, Req, Resp,Ctx,  E> {
+        Muxed::Request(MockRequest::new(to, req, ctx, resp))
     }
 
     /// Create a mock response transaction
-    pub fn response(to: Addr, resp: Resp, err: Option<E>) -> MockTransaction<Addr, Req, Resp, E> {
-        Muxed::Response(MockResponse::new(to, resp, err))
+    pub fn response(to: Addr, resp: Resp, ctx: Ctx, err: Option<E>) -> MockTransaction<Addr, Req, Resp, Ctx, E> {
+        Muxed::Response(MockResponse::new(to, resp, ctx, err))
     }
 }
 
 /// MockConnector provides an expectation based mock connector implementation
 /// to simplify writing tests against modules using the Connector abstraction.
 pub struct MockConnector<Addr, Req, Resp, E, Ctx> {
-    transactions: Arc<Mutex<VecDeque<MockTransaction<Addr, Req, Resp, E>>>>,
+    transactions: Arc<Mutex<VecDeque<MockTransaction<Addr, Req, Resp, Ctx, E>>>>,
     _ctx: PhantomData<Ctx>,
 }
 
@@ -112,7 +117,7 @@ where
     /// Set expectations on the connector
     pub fn expect<T>(&mut self, transactions: T) -> Self
     where
-        T: Into<VecDeque<MockTransaction<Addr, Req, Resp, E>>>,
+        T: Into<VecDeque<MockTransaction<Addr, Req, Resp, Ctx, E>>>,
     {
         *self.transactions.lock().unwrap() = transactions.into();
 
@@ -122,7 +127,7 @@ where
     /// Finalise expectations on the connector
     pub fn finalise(&mut self) {
         let transactions: Vec<_> = self.transactions.lock().unwrap().drain(..).collect();
-        let expectations = Vec::<MockTransaction<Addr, Req, Resp, E>>::new();
+        let expectations = Vec::<MockTransaction<Addr, Req, Resp, Ctx, E>>::new();
         assert_eq!(
             expectations, transactions,
             "not all transactions have been evaluated"
@@ -143,8 +148,8 @@ where
     /// Make a request and return the pre-set response
     /// This checks the request against the specified expectations
     fn request(
-        &mut self, _ctx: Ctx, _id: Id, addr: Addr, req: Req,
-    ) -> Box<Future<Item = Resp, Error = E> + Send + 'static> {
+        &mut self, ctx: Ctx, _id: Id, addr: Addr, req: Req,
+    ) -> Box<Future<Item = (Resp, Ctx), Error = E> + Send + 'static> {
         let mut transactions = self.transactions.lock().unwrap();
 
         let transaction = transactions.pop_front().expect(&format!(
@@ -155,6 +160,7 @@ where
 
         assert_eq!(request.to, addr, "destination mismatch");
         assert_eq!(request.req, req, "request mismatch");
+        assert_eq!(request.ctx, ctx, "context mismatch");
 
         Box::new(match request.resp {
             Ok(r) => ok(r),

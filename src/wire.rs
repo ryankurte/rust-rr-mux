@@ -17,7 +17,7 @@ use crate::connector::Connector;
 pub struct Wire <ReqId, Target, Req, Resp, E, Ctx> {
     connectors: Arc<Mutex<HashMap<Target, WireMux<ReqId, Target, Req, Resp, E, Ctx>>>>,
 
-    requests: Arc<Mutex<HashMap<(Target, Target, ReqId), oneshot::Sender<Resp>>>>,
+    requests: Arc<Mutex<HashMap<(Target, Target, ReqId), oneshot::Sender<(Resp, Ctx)>>>>,
 
     _e: PhantomData<E>, 
     _ctx: PhantomData<Ctx>,
@@ -72,7 +72,7 @@ where
         w
     }
 
-    fn request(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, req: Req) -> impl Future<Item=Resp, Error=()> {
+    fn request(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, req: Req) -> impl Future<Item=(Resp, Ctx), Error=()> {
         // Fetch matching connector
         let connectors = self.connectors.lock().unwrap();
         let mut conn = connectors.get(&to.clone()).unwrap().clone();
@@ -88,9 +88,9 @@ where
         })
     }
 
-    fn respond(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, resp: Resp) -> impl Future<Item=(), Error=()> {
+    fn respond(&mut self, ctx: Ctx, to: Target, from: Target, id: ReqId, resp: Resp) -> impl Future<Item=(), Error=()> {
         let pending = self.requests.lock().unwrap().remove(&(from, to, id)).unwrap();
-        pending.send(resp).map(|_| () ).map_err(|_| () ).unwrap();
+        pending.send((resp, ctx)).map(|_| () ).map_err(|_| () ).unwrap();
         ok(())
     }
 }
@@ -172,7 +172,7 @@ where
     // Send a request and receive a response or error at some time in the future
     fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: Req,
-    ) -> Box<Future<Item = Resp, Error = E> + Send + 'static> {
+    ) -> Box<Future<Item = (Resp, Ctx), Error = E> + Send + 'static> {
         let mut conn = self.connector.clone();
 
         // Send to connector and await response
@@ -228,7 +228,7 @@ mod tests {
 
         // c1 makes a request (and checks the response)
         let a = c1.request((), 1, 0x22, 40)
-        .map(|resp| {
+        .map(|(resp, _ctx)| {
             assert_eq!(resp, 50);
         }).map_err(|_e| () );
 

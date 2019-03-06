@@ -92,14 +92,14 @@ where
 {
     fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: MappedReq,
-    ) -> Box<Future<Item = MappedResp, Error = E> + Send + 'static> {
+    ) -> Box<Future<Item = (MappedResp, Ctx), Error = E> + Send + 'static> {
         let m = self.mapper.clone();
 
         let req = self.mapper.outgoing(Muxed::Request(req));
         Box::new(
             self.conn
                 .request(ctx, req_id, target, req.req().unwrap())
-                .map(move |resp| m.incoming(Muxed::Response(resp)).resp().unwrap()),
+                .map(move |(resp, ctx)| (m.incoming(Muxed::Response(resp)).resp().unwrap(), ctx) )
         )
     }
 
@@ -159,12 +159,12 @@ mod tests {
             );
 
         m.expect(vec![
-            MockTransaction::request(1, A(0), Ok(A(1))),
-            MockTransaction::response(1, A(2), None),
+            MockTransaction::request(1, A(0), (), Ok((A(1), ()))),
+            MockTransaction::response(1, A(2), (), None),
         ]);
 
         let resp = w.request((), 0, 1, B(0)).wait().unwrap();
-        assert_eq!(resp, B(1));
+        assert_eq!(resp.0, B(1));
 
         w.respond((), 0, 1, B(2)).wait().unwrap();
 
