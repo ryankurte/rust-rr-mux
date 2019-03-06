@@ -17,7 +17,7 @@ use crate::muxed::Muxed;
 pub struct MockRequest<Addr, Req, Resp, Ctx, E> {
     to: Addr,
     req: Req,
-    ctx: Ctx,
+    ctx: Option<Ctx>,
 
     resp: Result<(Resp, Ctx), E>,
     delay: Option<Duration>,
@@ -26,14 +26,19 @@ pub struct MockRequest<Addr, Req, Resp, Ctx, E> {
 impl<Addr, Req, Resp, Ctx, E> MockRequest<Addr, Req, Resp, Ctx, E> {
     /// Create a new mock request.
     /// You probably want to use MockTransaction::request instead of constructing this directly
-    pub fn new(to: Addr, req: Req, ctx: Ctx, resp: Result<(Resp, Ctx), E>) -> Self {
+    pub fn new(to: Addr, req: Req, resp: Result<(Resp, Ctx), E>) -> Self {
         MockRequest {
             to,
             req,
             resp,
-            ctx,
+            ctx: None,
             delay: None,
         }
+    }
+
+    pub fn with_context(mut self, ctx: Ctx) -> Self {
+        self.ctx = Some(ctx);
+        self
     }
 }
 
@@ -43,23 +48,28 @@ pub struct MockResponse<Addr, Resp, Ctx, E> {
     to: Addr,
     resp: Resp,
     err: Option<E>,
-    ctx: Ctx,
+    ctx: Option<Ctx>,
 }
 
 impl<Addr, Resp, Ctx, E> MockResponse<Addr, Resp, Ctx, E> {
     /// Create a new mock response.
     /// You probably want to use MockTransaction::response instead of constructing this directly
-    pub fn new(to: Addr, resp: Resp, ctx: Ctx, err: Option<E>) -> Self {
+    pub fn new(to: Addr, resp: Resp, err: Option<E>) -> Self {
         MockResponse {
             to,
             resp,
             err,
-            ctx,
+            ctx: None,
         }
     }
 
     pub fn with_error(mut self, err: E) -> Self {
         self.err = Some(err);
+        self
+    }
+
+    pub fn with_context(mut self, ctx: Ctx) -> Self {
+        self.ctx = Some(ctx);
         self
     }
 }
@@ -71,14 +81,14 @@ pub type MockTransaction<Addr, Req, Resp, Ctx, E> =
 impl<Addr, Req, Resp, Ctx, E> MockTransaction<Addr, Req, Resp, Ctx, E> {
     /// Create a mock request -> response transaction
     pub fn request(
-        to: Addr, req: Req, ctx: Ctx, resp: Result<(Resp, Ctx), E>,
-    ) -> MockTransaction<Addr, Req, Resp,Ctx,  E> {
-        Muxed::Request(MockRequest::new(to, req, ctx, resp))
+        to: Addr, req: Req, resp: Result<(Resp, Ctx), E>,
+    ) -> MockTransaction<Addr, Req, Resp, Ctx,  E> {
+        Muxed::Request(MockRequest::new(to, req, resp))
     }
 
     /// Create a mock response transaction
-    pub fn response(to: Addr, resp: Resp, ctx: Ctx, err: Option<E>) -> MockTransaction<Addr, Req, Resp, Ctx, E> {
-        Muxed::Response(MockResponse::new(to, resp, ctx, err))
+    pub fn response(to: Addr, resp: Resp, err: Option<E>) -> MockTransaction<Addr, Req, Resp, Ctx, E> {
+        Muxed::Response(MockResponse::new(to, resp, err))
     }
 }
 
@@ -160,7 +170,9 @@ where
 
         assert_eq!(request.to, addr, "destination mismatch");
         assert_eq!(request.req, req, "request mismatch");
-        assert_eq!(request.ctx, ctx, "context mismatch");
+        if let Some(c) = request.ctx {
+            assert_eq!(c, ctx, "context mismatch");
+        }
 
         Box::new(match request.resp {
             Ok(r) => ok(r),
@@ -171,7 +183,7 @@ where
     /// Make a response
     /// This checks the response against provided expectations
     fn respond(
-        &mut self, _ctx: Ctx, _id: Id, addr: Addr, resp: Resp,
+        &mut self, ctx: Ctx, _id: Id, addr: Addr, resp: Resp,
     ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
         let mut transactions = self.transactions.lock().unwrap();
 
@@ -183,6 +195,9 @@ where
 
         assert_eq!(response.to, addr, "destination mismatch");
         assert_eq!(response.resp, resp, "request mismatch");
+        if let Some(c) = response.ctx {
+            assert_eq!(c, ctx, "context mismatch");
+        }
 
         Box::new(match response.err {
             Some(e) => err(e),

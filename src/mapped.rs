@@ -159,8 +159,8 @@ mod tests {
             );
 
         m.expect(vec![
-            MockTransaction::request(1, A(0), (), Ok((A(1), ()))),
-            MockTransaction::response(1, A(2), (), None),
+            MockTransaction::request(1, A(0), Ok((A(1), ()))),
+            MockTransaction::response(1, A(2), None),
         ]);
 
         let resp = w.request((), 0, 1, B(0)).wait().unwrap();
