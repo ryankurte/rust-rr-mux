@@ -95,7 +95,8 @@ where
 
     /// Handle a pre-decoded response message
     pub fn handle_resp(&mut self, id: ReqId, _target: Target, resp: Resp, ctx: Ctx) -> Result<(), E> {
-        if let Some(ch) = self.requests.lock().unwrap().remove(&id) {
+        let ch = { self.requests.lock().unwrap().remove(&id) };
+        if let Some(ch) = ch {
             ch.send((resp, ctx)).unwrap();
         } else {
             info!("Response id: '{:?}', no request pending", id);
@@ -122,10 +123,10 @@ where
         let (tx, rx) = oneshot::channel();
 
         // Save response to map
-        self.requests
+        { self.requests
             .lock()
             .unwrap()
-            .insert(id.clone(), Box::new(tx));
+            .insert(id.clone(), Box::new(tx)) };
 
         // Send request and return channel future
         let sender = self.sender.clone();
