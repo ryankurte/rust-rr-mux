@@ -13,7 +13,7 @@ use crate::connector::Connector;
 use crate::muxed::Muxed;
 
 /// MockRequest is a mocked request expectation with a provided response
-#[derive(Debug, PartialEq, Builder)]
+#[derive(Debug, Clone, PartialEq, Builder)]
 pub struct MockRequest<Addr, Req, Resp, Ctx, E> {
     to: Addr,
     req: Req,
@@ -43,7 +43,7 @@ impl<Addr, Req, Resp, Ctx, E> MockRequest<Addr, Req, Resp, Ctx, E> {
 }
 
 /// MockResponse is a mocked response expectation
-#[derive(Debug, PartialEq, Builder)]
+#[derive(Debug, Clone, PartialEq, Builder)]
 pub struct MockResponse<Addr, Resp, Ctx, E> {
     to: Addr,
     resp: Resp,

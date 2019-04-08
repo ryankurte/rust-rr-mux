@@ -1,5 +1,5 @@
 /// Muxed is a container for either a request or response message
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Muxed<Req, Resp> {
     Request(Req),
     Response(Resp),
