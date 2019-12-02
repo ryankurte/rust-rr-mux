@@ -2,10 +2,14 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
+use std::pin::Pin;
 
 use futures::prelude::*;
-use futures::sync::mpsc::{channel, Receiver as ChannelReceiver, Sender as ChannelSender};
-use futures::sync::{oneshot, oneshot::Sender as OneshotSender};
+use futures::stream::Stream;
+use futures::channel::mpsc::{channel, Receiver as ChannelReceiver, Sender as ChannelSender};
+use futures::channel::{oneshot, oneshot::Sender as OneshotSender};
+use futures::task::{Context, Poll};
+use async_trait::async_trait;
 
 use crate::connector::Connector;
 use crate::muxed::Muxed;
@@ -105,20 +109,21 @@ where
     }
 }
 
+#[async_trait]
 impl<ReqId, Target, Req, Resp, E, Ctx> Connector<ReqId, Target, Req, Resp, E, Ctx>
     for Mux<ReqId, Target, Req, Resp, E, Ctx>
 where
     ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send + 'static,
-    Target: Debug + Send + 'static,
+    Target: Debug + Sync + Send + 'static,
     Req: Debug + Send + 'static,
     Resp: Debug + Send + 'static,
     E: Debug + Send + 'static,
     Ctx: Debug + Clone + Send + 'static,
 {
     /// Send and register a request
-    fn request(
+    async fn request(
         &mut self, ctx: Ctx, id: ReqId, addr: Target, req: Req,
-    ) -> Box<Future<Item = (Resp, Ctx), Error = E> + Send + 'static> {
+    ) -> Result<(Resp, Ctx), E> {
         // Create future channel
         let (tx, rx) = oneshot::channel();
 
@@ -129,49 +134,51 @@ where
             .insert(id.clone(), Box::new(tx)) };
 
         // Send request and return channel future
-        let sender = self.sender.clone();
-        Box::new(
-            futures::lazy(move || {
-                sender
-                    .send((id, addr, Muxed::Request(req), ctx))
-                    .map(|_r| ())
-                    .map_err(|_e| panic!())
-            })
-            .and_then(|_| {
-                // Panic on future closed, this is probably not desirable
-                // TODO: fix this
-                rx.map_err(|_e| panic!())
-            }),
-        )
+        let mut sender = self.sender.clone();
+
+        match sender.send((id, addr, Muxed::Request(req), ctx)).await {
+            Ok(_) => (),
+            Err(e) => panic!(e),
+        };
+
+        let res = match rx.await {
+            Ok(r) => r,
+            Err(e) => panic!(e),
+        };
+
+        Ok(res)
     }
 
-    fn respond(
+    async fn respond(
         &mut self, ctx: Ctx, id: ReqId, addr: Target, resp: Resp,
-    ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
+    ) -> Result<(), E> {
         // Send request and return channel future
-        let sender = self.sender.clone();
-        Box::new(futures::lazy(move || {
-            sender
-                .send((id, addr, Muxed::Response(resp), ctx))
-                .map(|_r| ())
-                .map_err(|_e| panic!())
-        }))
+        let mut sender = self.sender.clone();
+
+        match sender.send((id, addr, Muxed::Response(resp), ctx)).await {
+            Ok(_) => (),
+            Err(e) => panic!(e),
+        };
+
+        Ok(())
     }
 }
 
+
 impl<ReqId, Target, Req, Resp, E, Ctx> Stream for Mux<ReqId, Target, Req, Resp, E, Ctx> {
     type Item = (ReqId, Target, Muxed<Req, Resp>, Ctx);
-    type Error = ();
 
     // Poll to read pending requests
-    fn poll(&mut self) -> Result<Async<Option<Self::Item>>, Self::Error> {
-        self.receiver.lock().unwrap().poll()
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.receiver.lock().unwrap().poll_next_unpin(cx)
     }
 }
 
 
 #[cfg(test)]
 mod tests {
+    extern crate async_std;
+    
     use super::*;
 
     #[derive(PartialEq, Debug, Clone)]
@@ -182,7 +189,7 @@ mod tests {
     struct C(u64);
 
     #[test]
-    fn text_mux() {
+    fn test_mux() {
         let mut mux: Mux<u16, u32, A, B, (), C> = Mux::new();
 
         let req_id = 10;
@@ -198,14 +205,14 @@ mod tests {
 
         // Make a request and check the response
         let a = mux.clone().request(ctx_out.clone(), req_id.clone(), addr.clone(), req.clone())
-            .map(|(resp, ctx)| {
+            .map_ok(|(resp, ctx)| {
                 assert_eq!(r, resp);
                 assert_eq!(c, ctx);
             }).map_err(|_e| () );
 
 
         // Respond to request
-        let b = mux.clone().for_each(|(i, a, m, c)| {
+        let b = mux.clone().try_for_each(|(i, a, m, c)| {
             let req_id = req_id.clone();
             assert_eq!(i, req_id);
             assert_eq!(a, addr);
@@ -216,7 +223,7 @@ mod tests {
             let ctx_in = ctx_in.clone();
             
             mux.handle_resp(req_id, addr, resp, ctx_in)
-        }).map(|_| () ).map_err(|_e| () );
+        }).map_ok(|_| () ).map_err(|_e| () );
 
         // Run using select
         // a will finish, b will poll forever

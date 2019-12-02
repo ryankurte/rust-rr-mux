@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use futures::prelude::*;
+use async_trait::async_trait;
 
 use crate::connector::Connector;
 use crate::muxed::Muxed;
@@ -43,7 +43,7 @@ where
     MappedResp: Debug + Send + 'static,
     E: Debug + Sync + Send + 'static,
     Ctx: Clone + Sync + Send + 'static,
-    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + 'static,
+    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + Send + 'static,
     M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>>
         + Clone
         + Sync
@@ -71,6 +71,7 @@ where
     }
 }
 
+#[async_trait]
 impl<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
     Connector<ReqId, Target, MappedReq, MappedResp, E, Ctx>
     for Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
@@ -83,31 +84,33 @@ where
     MappedResp: Debug + Send + 'static,
     E: Debug + Sync + Send + 'static,
     Ctx: Clone + Sync + Send + 'static,
-    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + 'static,
+    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + Send + 'static,
     M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>>
         + Clone
         + Sync
         + Send
         + 'static,
 {
-    fn request(
+    async fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: MappedReq,
-    ) -> Box<Future<Item = (MappedResp, Ctx), Error = E> + Send + 'static> {
+    ) ->Result<(MappedResp, Ctx), E> {
         let m = self.mapper.clone();
 
         let req = self.mapper.outgoing(Muxed::Request(req));
-        Box::new(
-            self.conn
-                .request(ctx, req_id, target, req.req().unwrap())
-                .map(move |(resp, ctx)| (m.incoming(Muxed::Response(resp)).resp().unwrap(), ctx) )
-        )
+        
+        let (resp, ctx) = self.conn.request(ctx, req_id, target, req.req().unwrap()).await.unwrap();
+
+        Ok((m.incoming(Muxed::Response(resp)).resp().unwrap(), ctx))
     }
 
-    fn respond(
+    async fn respond(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, resp: MappedResp,
-    ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
+    ) -> Result<(), E> {
         let resp = self.mapper.outgoing(Muxed::Response(resp));
-        Box::new(self.conn.respond(ctx, req_id, target, resp.resp().unwrap()))
+        
+        self.conn.respond(ctx, req_id, target, resp.resp().unwrap()).await?;
+
+        Ok(())
     }
 }
 

@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate log;
 
+extern crate futures;
+extern crate async_trait;
+
 pub mod connector;
 /// Connector defines a generic futures-based request/response interface.
 /// This can be used to implement message based protocols independent of underlying transports

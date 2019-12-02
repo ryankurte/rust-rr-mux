@@ -8,7 +8,11 @@ description = "A Request Response Multiplexer for building protocol handlers etc
 license = "MIT"
 
 [dependencies]
-futures = "0.1.25"
+futures = "0.3.1"
+async-trait = "0.1.19"
 log = "0.4.6"
 derive_builder = "0.7.0"
 
+[dev-dependencies.async-std]
+version = "*"
+features = [ "attributes" ]

@@ -4,8 +4,7 @@ use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures::future::{err, ok};
-use futures::prelude::*;
+use async_trait::async_trait;
 
 use derive_builder::Builder;
 
@@ -145,6 +144,7 @@ where
     }
 }
 
+#[async_trait]
 impl<Id, Addr, Req, Resp, E, Ctx> Connector<Id, Addr, Req, Resp, E, Ctx>
     for MockConnector<Addr, Req, Resp, E, Ctx>
 where
@@ -157,9 +157,9 @@ where
 {
     /// Make a request and return the pre-set response
     /// This checks the request against the specified expectations
-    fn request(
+    async fn request(
         &mut self, ctx: Ctx, _id: Id, addr: Addr, req: Req,
-    ) -> Box<Future<Item = (Resp, Ctx), Error = E> + Send + 'static> {
+    ) -> Result<(Resp, Ctx), E> {
         let mut transactions = self.transactions.lock().unwrap();
 
         let transaction = transactions.pop_front().expect(&format!(
@@ -174,17 +174,17 @@ where
             assert_eq!(c, ctx, "context mismatch");
         }
 
-        Box::new(match request.resp {
-            Ok(r) => ok(r),
-            Err(e) => err(e),
-        })
+        match request.resp {
+            Ok(r) => Ok(r),
+            Err(e) => Err(e),
+        }
     }
 
     /// Make a response
     /// This checks the response against provided expectations
-    fn respond(
+    async fn respond(
         &mut self, ctx: Ctx, _id: Id, addr: Addr, resp: Resp,
-    ) -> Box<Future<Item = (), Error = E> + Send + 'static> {
+    ) -> Result<(), E> {
         let mut transactions = self.transactions.lock().unwrap();
 
         let transaction = transactions.pop_front().expect(&format!(
@@ -199,9 +199,9 @@ where
             assert_eq!(c, ctx, "context mismatch");
         }
 
-        Box::new(match response.err {
-            Some(e) => err(e),
-            None => ok(()),
-        })
+        match response.err {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
