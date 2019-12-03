@@ -255,7 +255,7 @@ mod tests {
 
         let b = async move {
             while let Some((from, id, val)) = c2.next().await {
-                c2.respond((), id, from, val + 10).await;
+                c2.respond((), id, from, val + 10).await.unwrap();
             }
         }.boxed();
         

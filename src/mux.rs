@@ -177,9 +177,7 @@ impl<ReqId, Target, Req, Resp, E, Ctx> Stream for Mux<ReqId, Target, Req, Resp, 
 
 #[cfg(test)]
 mod tests {
-    extern crate async_std;
     extern crate futures;
-
     use futures::prelude::*;
     use futures::executor::block_on;
 
