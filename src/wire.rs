@@ -234,6 +234,10 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    use futures::prelude::*;
+    use futures::executor::block_on;
+
     use super::*;
 
     #[test]
@@ -242,21 +246,22 @@ mod tests {
         
         let mut c1 = i.connector(0x11);
         let mut c2 = i.connector(0x22);
-
+        
         // c1 makes a request (and checks the response)
-        let a = c1.request((), 1, 0x22, 40)
-        .map_ok(|(resp, _ctx)| {
+        let a = async move {
+            let (resp, _ctx) = c1.request((), 1, 0x22, 40).await.unwrap();
             assert_eq!(resp, 50);
-        }).map_err(|_e| () );
+        }.boxed();
 
-        // c2 handles requests (and issues responses)
-        let b = c2.clone().try_for_each(move |(from, id, val)| {
-            c2.respond((), id, from, val + 10)
-        }).map_ok(|_| () ).map_err(|_e| () );
+        let b = async move {
+            while let Some((from, id, val)) = c2.next().await {
+                c2.respond((), id, from, val + 10).await;
+            }
+        }.boxed();
         
         // Run using select
         // a will finish, b will poll forever
-        let _ = Future::select(a, b).wait();
+        let _ = block_on(future::select(a, b));
 
     }
 

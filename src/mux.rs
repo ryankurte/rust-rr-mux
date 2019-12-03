@@ -164,7 +164,7 @@ where
     }
 }
 
-
+// Stream implementation to allow polling from mux
 impl<ReqId, Target, Req, Resp, E, Ctx> Stream for Mux<ReqId, Target, Req, Resp, E, Ctx> {
     type Item = (ReqId, Target, Muxed<Req, Resp>, Ctx);
 
@@ -178,14 +178,18 @@ impl<ReqId, Target, Req, Resp, E, Ctx> Stream for Mux<ReqId, Target, Req, Resp, 
 #[cfg(test)]
 mod tests {
     extern crate async_std;
-    
+    extern crate futures;
+
+    use futures::prelude::*;
+    use futures::executor::block_on;
+
     use super::*;
 
-    #[derive(PartialEq, Debug, Clone)]
+    #[derive(PartialEq, Debug, Copy, Clone)]
     struct A(u64);
-    #[derive(PartialEq, Debug, Clone)]
+    #[derive(PartialEq, Debug, Copy, Clone)]
     struct B(u64);
-    #[derive(PartialEq, Debug, Clone)]
+    #[derive(PartialEq, Debug, Copy, Clone)]
     struct C(u64);
 
     #[test]
@@ -200,34 +204,32 @@ mod tests {
         let ctx_out = C(40);
         let ctx_in = C(50);
 
-        let r = resp.clone();
-        let c = ctx_in.clone();
-
         // Make a request and check the response
-        let a = mux.clone().request(ctx_out.clone(), req_id.clone(), addr.clone(), req.clone())
-            .map_ok(|(resp, ctx)| {
-                assert_eq!(r, resp);
-                assert_eq!(c, ctx);
-            }).map_err(|_e| () );
-
+        let mut m = mux.clone();
+        let a = async {
+            let (r, c) = m.request(ctx_out, req_id, addr, req).await.unwrap();
+            assert_eq!(resp, r);
+            assert_eq!(ctx_in, c);
+        }.boxed();
 
         // Respond to request
-        let b = mux.clone().try_for_each(|(i, a, m, c)| {
-            let req_id = req_id.clone();
-            assert_eq!(i, req_id);
-            assert_eq!(a, addr);
-            assert_eq!(m.req().unwrap(), req);
-            assert_eq!(c, ctx_out);
-
-            let resp = resp.clone();
-            let ctx_in = ctx_in.clone();
-            
-            mux.handle_resp(req_id, addr, resp, ctx_in)
-        }).map_ok(|_| () ).map_err(|_e| () );
+        let b = async {
+            while let Some((i, a, m, c)) = mux.next().await {
+                assert_eq!(i, req_id);
+                assert_eq!(a, addr);
+                assert_eq!(m.req(), Some(req));
+                assert_eq!(c, ctx_out);
+    
+                let resp = resp.clone();
+                let ctx_in = ctx_in.clone();
+                
+                mux.handle_resp(req_id, addr, resp, ctx_in).unwrap();
+            }
+        }.boxed();
 
         // Run using select
         // a will finish, b will poll forever
-        let _ = Future::select(a, b).wait();
+        let _ = block_on(future::select(a, b));
 
     }
 }

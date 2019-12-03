@@ -121,7 +121,8 @@ mod tests {
     use crate::muxed::Muxed;
 
     use crate::connector::Connector;
-    use futures::future::Future;
+    
+    use futures::executor::block_on;
 
     #[derive(PartialEq, Debug, Clone)]
     struct A(u64);
@@ -166,10 +167,10 @@ mod tests {
             MockTransaction::response(1, A(2), None),
         ]);
 
-        let resp = w.request((), 0, 1, B(0)).wait().unwrap();
+        let resp = block_on( w.request((), 0, 1, B(0)) ).unwrap();
         assert_eq!(resp.0, B(1));
 
-        w.respond((), 0, 1, B(2)).wait().unwrap();
+        block_on( w.respond((), 0, 1, B(2)) ).unwrap();
 
         m.finalise();
     }
