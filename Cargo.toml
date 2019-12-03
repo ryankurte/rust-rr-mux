@@ -1,6 +1,6 @@
 [package]
 name = "rr-mux"
-version = "0.7.1"
+version = "0.8.0"
 authors = ["Ryan Kurte <ryankurte@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/ryankurte/rust-rr-mux"
