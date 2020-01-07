@@ -159,7 +159,7 @@ where
     /// This checks the request against the specified expectations
     async fn request(
         &mut self, ctx: Ctx, _id: Id, addr: Addr, req: Req,
-    ) -> Result<(Resp, Ctx), E> {
+    ) -> Result<Resp, E> {
         let mut transactions = self.transactions.lock().unwrap();
 
         let transaction = transactions.pop_front().expect(&format!(
@@ -175,7 +175,7 @@ where
         }
 
         match request.resp {
-            Ok(r) => Ok(r),
+            Ok(r) => Ok(r.0),
             Err(e) => Err(e),
         }
     }

@@ -13,7 +13,7 @@ pub trait Connector<ReqId, Target, Req, Resp, E, Ctx> {
     // Send a request and receive a response or error at some time in the future
     async fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: Req,
-    ) -> Result<(Resp, Ctx), E>;
+    ) -> Result<Resp, E>;
 
     // Send a response message
     async fn respond(

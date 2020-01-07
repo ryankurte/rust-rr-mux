@@ -23,7 +23,7 @@ use crate::muxed::Muxed;
 /// Req and Resp are the request and response messages
 /// Ctx is a a shared context
 pub struct Mux<ReqId, Target, Req, Resp, E, Ctx> {
-    requests: Arc<Mutex<HashMap<ReqId, Box<OneshotSender<(Resp, Ctx)>>>>>,
+    requests: Arc<Mutex<HashMap<ReqId, Box<OneshotSender<Resp>>>>>,
 
     sender: ChannelSender<(ReqId, Target, Muxed<Req, Resp>, Ctx)>,
     receiver: Arc<Mutex<ChannelReceiver<(ReqId, Target, Muxed<Req, Resp>, Ctx)>>>,
@@ -36,12 +36,12 @@ pub struct Mux<ReqId, Target, Req, Resp, E, Ctx> {
 
 impl<ReqId, Target, Req, Resp, E, Ctx> Clone for Mux<ReqId, Target, Req, Resp, E, Ctx>
 where
-    ReqId: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Sync + Send + 'static,
-    Target: Debug + Sync + Send + 'static,
-    Req: Debug + Sync + Send + 'static,
-    Resp: Debug + Sync + Send + 'static,
-    E: Debug + Sync + Send + 'static,
-    Ctx: Debug + Clone + Sync + Send + 'static,
+    ReqId: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Send + 'static,
+    Target: Debug + Send + 'static,
+    Req: Debug + Send + 'static,
+    Resp: Debug + Send + 'static,
+    E: Debug + Send + 'static,
+    Ctx: Debug + Clone + Send + 'static,
 {
     fn clone(&self) -> Self {
         Mux {
@@ -58,12 +58,12 @@ where
 
 impl<ReqId, Target, Req, Resp, E, Ctx> Mux<ReqId, Target, Req, Resp, E, Ctx>
 where
-    ReqId: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Sync + Send + 'static,
-    Target: Debug + Sync + Send + 'static,
-    Req: Debug + Sync + Send + 'static,
-    Resp: Debug + Sync + Send + 'static,
-    E: Debug + Sync + Send + 'static,
-    Ctx: Debug + Clone + Sync + Send + 'static,
+    ReqId: std::cmp::Eq + std::hash::Hash + std::fmt::Debug + Clone + Send + 'static,
+    Target: Debug + Send + 'static,
+    Req: Debug + Send + 'static,
+    Resp: Debug + Send + 'static,
+    E: Debug + Send + 'static,
+    Ctx: Debug + Clone + Send + 'static,
 {
     /// Create a new mux over the provided sender
     pub fn new() -> Mux<ReqId, Target, Req, Resp, E, Ctx> {
@@ -83,13 +83,13 @@ where
     /// Handle a muxed received message
     /// This either returns a pending response or passes request messages on
     pub fn handle(
-        &mut self, id: ReqId, addr: Target, message: Muxed<Req, Resp>, ctx: Ctx) -> Result<Option<(Target, Req, Ctx)>, E> {
+        &mut self, id: ReqId, addr: Target, message: Muxed<Req, Resp>) -> Result<Option<(Target, Req)>, E> {
         let r = match message {
             // Requests get passed through the mux
-            Muxed::Request(req) => Some((addr, req, ctx)),
+            Muxed::Request(req) => Some((addr, req)),
             // Responses get matched with outstanding requests
             Muxed::Response(resp) => {
-                self.handle_resp(id, addr, resp, ctx)?;
+                self.handle_resp(id, addr, resp)?;
                 None
             }
         };
@@ -98,10 +98,10 @@ where
     }
 
     /// Handle a pre-decoded response message
-    pub fn handle_resp(&mut self, id: ReqId, _target: Target, resp: Resp, ctx: Ctx) -> Result<(), E> {
+    pub fn handle_resp(&mut self, id: ReqId, _target: Target, resp: Resp) -> Result<(), E> {
         let ch = { self.requests.lock().unwrap().remove(&id) };
         if let Some(ch) = ch {
-            ch.send((resp, ctx)).unwrap();
+            ch.send(resp).unwrap();
         } else {
             info!("Response id: '{:?}', no request pending", id);
         }
@@ -114,7 +114,7 @@ impl<ReqId, Target, Req, Resp, E, Ctx> Connector<ReqId, Target, Req, Resp, E, Ct
     for Mux<ReqId, Target, Req, Resp, E, Ctx>
 where
     ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send + 'static,
-    Target: Debug + Sync + Send + 'static,
+    Target: Debug + Send + 'static,
     Req: Debug + Send + 'static,
     Resp: Debug + Send + 'static,
     E: Debug + Send + 'static,
@@ -123,7 +123,7 @@ where
     /// Send and register a request
     async fn request(
         &mut self, ctx: Ctx, id: ReqId, addr: Target, req: Req,
-    ) -> Result<(Resp, Ctx), E> {
+    ) -> Result<Resp, E> {
         // Create future channel
         let (tx, rx) = oneshot::channel();
 
@@ -205,9 +205,8 @@ mod tests {
         // Make a request and check the response
         let mut m = mux.clone();
         let a = async {
-            let (r, c) = m.request(ctx_out, req_id, addr, req).await.unwrap();
+            let r = m.request(ctx_out, req_id, addr, req).await.unwrap();
             assert_eq!(resp, r);
-            assert_eq!(ctx_in, c);
         }.boxed();
 
         // Respond to request
@@ -219,9 +218,8 @@ mod tests {
                 assert_eq!(c, ctx_out);
     
                 let resp = resp.clone();
-                let ctx_in = ctx_in.clone();
                 
-                mux.handle_resp(req_id, addr, resp, ctx_in).unwrap();
+                mux.handle_resp(req_id, addr, resp).unwrap();
             }
         }.boxed();
 

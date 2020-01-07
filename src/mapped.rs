@@ -93,14 +93,14 @@ where
 {
     async fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: MappedReq,
-    ) ->Result<(MappedResp, Ctx), E> {
+    ) ->Result<MappedResp, E> {
         let m = self.mapper.clone();
 
         let req = self.mapper.outgoing(Muxed::Request(req));
         
-        let (resp, ctx) = self.conn.request(ctx, req_id, target, req.req().unwrap()).await.unwrap();
+        let resp = self.conn.request(ctx, req_id, target, req.req().unwrap()).await.unwrap();
 
-        Ok((m.incoming(Muxed::Response(resp)).resp().unwrap(), ctx))
+        Ok(m.incoming(Muxed::Response(resp)).resp().unwrap())
     }
 
     async fn respond(
@@ -168,7 +168,7 @@ mod tests {
         ]);
 
         let resp = block_on( w.request((), 0, 1, B(0)) ).unwrap();
-        assert_eq!(resp.0, B(1));
+        assert_eq!(resp, B(1));
 
         block_on( w.respond((), 0, 1, B(2)) ).unwrap();
 
