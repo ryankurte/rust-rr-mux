@@ -35,20 +35,16 @@ pub struct Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ct
 impl<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
     Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
 where
-    ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Sync + Send + 'static,
-    Target: Debug + Sync + Send + 'static,
-    BaseReq: Debug + Sync + Send + 'static,
-    BaseResp: Debug + Sync + Send + 'static,
+    ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send + 'static,
+    Target: Debug + Send + 'static,
+    BaseReq: Debug + Send + 'static,
+    BaseResp: Debug + Send + 'static,
     MappedReq: Debug + Send + 'static,
     MappedResp: Debug + Send + 'static,
-    E: Debug + Sync + Send + 'static,
-    Ctx: Clone + Sync + Send + 'static,
-    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + Send + 'static,
-    M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>>
-        + Clone
-        + Sync
-        + Send
-        + 'static,
+    E: Debug + Send + 'static,
+    Ctx: Clone + Send + 'static,
+    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Send + 'static,
+    M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>> + Clone + Send + 'static,
 {
     pub fn new(
         conn: Conn, mapper: M,
@@ -76,18 +72,17 @@ impl<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
     Connector<ReqId, Target, MappedReq, MappedResp, E, Ctx>
     for Mapped<BaseReq, BaseResp, MappedReq, MappedResp, ReqId, Target, E, Ctx, Conn, M>
 where
-    ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Sync + Send + 'static,
-    Target: Debug + Sync + Send + 'static,
-    BaseReq: Debug + Sync + Send + 'static,
-    BaseResp: Debug + Sync + Send + 'static,
+    ReqId: std::cmp::Eq + std::hash::Hash + Debug + Clone + Send + 'static,
+    Target: Debug + Send + 'static,
+    BaseReq: Debug + Send + 'static,
+    BaseResp: Debug + Send + 'static,
     MappedReq: Debug + Send + 'static,
     MappedResp: Debug + Send + 'static,
-    E: Debug + Sync + Send + 'static,
-    Ctx: Clone + Sync + Send + 'static,
-    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Sync + Send + 'static,
+    E: Debug + Send + 'static,
+    Ctx: Clone + Send + 'static,
+    Conn: Connector<ReqId, Target, BaseReq, BaseResp, E, Ctx> + Send + 'static,
     M: Mapper<Original = Muxed<BaseReq, BaseResp>, Mapped = Muxed<MappedReq, MappedResp>>
         + Clone
-        + Sync
         + Send
         + 'static,
 {
