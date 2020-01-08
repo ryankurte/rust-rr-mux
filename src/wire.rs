@@ -18,7 +18,7 @@ use crate::connector::Connector;
 pub struct Wire <ReqId, Target, Req, Resp, E, Ctx> {
     connectors: Arc<Mutex<HashMap<Target, WireMux<ReqId, Target, Req, Resp, E, Ctx>>>>,
 
-    requests: Arc<Mutex<HashMap<(Target, Target, ReqId), oneshot::Sender<(Resp, Ctx)>>>>,
+    requests: Arc<Mutex<HashMap<(Target, Target, ReqId), oneshot::Sender<Resp>>>>,
 
     _e: PhantomData<E>, 
     _ctx: PhantomData<Ctx>,
@@ -73,7 +73,7 @@ where
         w
     }
 
-    async fn request(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, req: Req) -> Result<(Resp, Ctx), ()> {
+    async fn request(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, req: Req) -> Result<Resp, ()> {
         // Fetch matching connector
         let mut conn = {
             let c = self.connectors.lock().unwrap();
@@ -93,10 +93,10 @@ where
         Ok(res)
     }
 
-    async fn respond(&mut self, ctx: Ctx, to: Target, from: Target, id: ReqId, resp: Resp) -> Result<(), E> {
+    async fn respond(&mut self, _ctx: Ctx, to: Target, from: Target, id: ReqId, resp: Resp) -> Result<(), E> {
         let pending = self.requests.lock().unwrap().remove(&(from, to, id)).unwrap();
         
-        pending.send((resp, ctx)).unwrap();
+        pending.send(resp).unwrap();
         
         Ok(())
     }
@@ -187,7 +187,7 @@ where
     // Send a request and receive a response or error at some time in the future
     async fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: Req,
-    ) -> Result<(Resp, Ctx), E> {
+    ) -> Result<Resp, E> {
 
         // Send to connector and await response
         let res = match self.connector.request(ctx, target, self.addr.clone(), req_id, req).await {
@@ -249,7 +249,7 @@ mod tests {
         
         // c1 makes a request (and checks the response)
         let a = async move {
-            let (resp, _ctx) = c1.request((), 1, 0x22, 40).await.unwrap();
+            let resp = c1.request((), 1, 0x22, 40).await.unwrap();
             assert_eq!(resp, 50);
         }.boxed();
 
