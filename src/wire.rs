@@ -27,7 +27,7 @@ pub struct Wire <ReqId, Target, Req, Resp, E, Ctx> {
 impl <ReqId, Target, Req, Resp, E, Ctx> Clone for Wire<ReqId, Target, Req, Resp, E, Ctx>
 where
     ReqId: Clone + Hash + Eq + PartialEq + Debug + Send + 'static,
-    Target: Clone + Hash + PartialEq + Eq + Sync + Send + 'static,
+    Target: Clone + Hash + PartialEq + Eq + Send + 'static,
     Req: PartialEq + Debug + Send + 'static,
     Resp: PartialEq + Debug + Send + 'static,
     E: PartialEq + Debug + Send + 'static,
@@ -47,7 +47,7 @@ where
 impl <ReqId, Target, Req, Resp, E, Ctx> Wire<ReqId, Target, Req, Resp, E, Ctx> 
 where
     ReqId: Clone + Hash + Eq + PartialEq + Debug + Send + 'static,
-    Target: Clone + Hash + PartialEq + Eq + Sync + Send + 'static,
+    Target: Clone + Hash + PartialEq + Eq + Send + 'static,
     Req: PartialEq + Debug + Send + 'static,
     Resp: PartialEq + Debug + Send + 'static,
     E: PartialEq + Debug + Send + 'static,
@@ -117,7 +117,7 @@ pub struct WireMux<ReqId, Target, Req, Resp, E, Ctx> {
 impl <ReqId, Target, Req, Resp, E, Ctx> WireMux<ReqId, Target, Req, Resp, E, Ctx>
 where
     ReqId: Clone + Hash + Eq + PartialEq + Debug + Send + 'static,
-    Target: Clone + Hash + PartialEq + Eq + Sync + Send + 'static,
+    Target: Clone + Hash + PartialEq + Eq + Send + 'static,
     Req: PartialEq + Debug + Send + 'static,
     Resp: PartialEq + Debug + Send + 'static,
     E: PartialEq + Debug + Send + 'static,
@@ -154,7 +154,7 @@ where
 impl <ReqId, Target, Req, Resp, E, Ctx> Clone for WireMux<ReqId, Target, Req, Resp, E, Ctx> 
 where
     ReqId: Clone + Hash + Eq + PartialEq + Debug + Send + 'static,
-    Target: Clone + Hash + PartialEq + Eq + Sync + Send + 'static,
+    Target: Clone + Hash + PartialEq + Eq + Send + 'static,
     Req: PartialEq + Debug + Send + 'static,
     Resp: PartialEq + Debug + Send + 'static,
     E: PartialEq + Debug + Send + 'static,
@@ -178,7 +178,7 @@ where
 impl <ReqId, Target, Req, Resp, E, Ctx> Connector<ReqId, Target, Req, Resp, E, Ctx> for WireMux <ReqId, Target, Req, Resp, E, Ctx> 
 where
     ReqId: Clone + Hash + Eq + PartialEq + Debug + Send + 'static,
-    Target: Clone + Hash + PartialEq + Eq + Sync + Send + 'static,
+    Target: Clone + Hash + PartialEq + Eq + Send + 'static,
     Req: PartialEq + Debug + Send + 'static,
     Resp: PartialEq + Debug + Send + 'static,
     E: PartialEq + Debug + Send + 'static,
@@ -188,9 +188,10 @@ where
     async fn request(
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, req: Req,
     ) -> Result<Resp, E> {
+        let addr = self.addr.clone();
 
         // Send to connector and await response
-        let res = match self.connector.request(ctx, target, self.addr.clone(), req_id, req).await {
+        let res = match self.connector.request(ctx, target, addr, req_id, req).await {
             Ok(r) => r,
             Err(e) => panic!(e),
         };
@@ -203,8 +204,9 @@ where
         &mut self, ctx: Ctx, req_id: ReqId, target: Target, resp: Resp,
     ) -> Result<(), E> {
         let mut conn = self.connector.clone();
+        let addr = self.addr.clone();
 
-        match conn.respond(ctx, target, self.addr.clone(), req_id, resp).await {
+        match conn.respond(ctx, target, addr, req_id, resp).await {
             Ok(_) => (),
             Err(e) => panic!(e),
         };
@@ -216,7 +218,7 @@ where
 impl <ReqId, Target, Req, Resp, E, Ctx> Stream for WireMux <ReqId, Target, Req, Resp, E, Ctx> 
 where
     ReqId: Hash + Eq + PartialEq + Debug + Send + 'static,
-    Target: Hash + PartialEq + Eq + Sync + Send + 'static,
+    Target: Hash + PartialEq + Eq + Send + 'static,
     Req: PartialEq + Debug + Send + 'static,
     Resp: PartialEq + Debug + Send + 'static,
     E: PartialEq + Debug + Send + 'static,
